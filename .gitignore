@@ -35,6 +35,8 @@ rtt_*.log
 
 # UF2 / binary artifacts
 *.uf2
+!formatter/
+!formatter/*.uf2
 *.hex
 *.bin
 *.elf
