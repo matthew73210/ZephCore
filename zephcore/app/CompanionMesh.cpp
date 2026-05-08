@@ -2021,7 +2021,7 @@ bool CompanionMesh::handleProtocolFrame(const uint8_t *data, size_t len)
 			static const uint8_t version[20] = "v1.15.1-zephyr";
 			uint8_t rsp[82];
 			rsp[0] = PACKET_DEVICE_INFO;
-			rsp[1] = 11;  // FIRMWARE_VER_CODE - v11 = CMD_SET/GET_DEFAULT_FLOOD_SCOPE
+			rsp[1] = 12;  // FIRMWARE_VER_CODE - v12 = CMD_SET_FLOOD_SCOPE_KEY [0x36, 0x01] unscoped variant
 			rsp[2] = (MAX_CONTACTS / 2 > 255) ? 255 : (MAX_CONTACTS / 2);  // protocol byte, app multiplies by 2
 			rsp[3] = MAX_GROUP_CHANNELS;
 			put_le32(&rsp[4], prefs.ble_pin ? prefs.ble_pin : 123456);  // BLE PIN
@@ -2674,32 +2674,18 @@ bool CompanionMesh::handleProtocolFrame(const uint8_t *data, size_t len)
 		return true;
 
 	case CMD_SET_FLOOD_SCOPE_KEY:
-		/* Set send scope mode:
+		/* Set send scope mode (Arduino MeshCore PR #2492, ver 12+):
 		 * [cmd][0][16-byte key] = explicit scoped override
-		 * [cmd][0]             = inherit default scope (empty channel scope)
-		 * [cmd][0]["none"]     = explicit unscoped
-		 * [cmd][0]["#none"]    = explicit unscoped (leading '#' ignored)
-		 * [cmd][1]             = explicit unscoped (legacy internal mode)
+		 * [cmd][0]             = clear scope override (use default_scope from prefs)
+		 * [cmd][1]             = explicit unscoped (sticky flag, bypasses default_scope)
 		 */
 		if (len >= 2 && data[1] == 0) {
-			const uint8_t *scope_name = &data[2];
-			size_t scope_len = len - 2;
-			if (scope_len > 0 && scope_name[0] == '#') {
-				scope_name++;
-				scope_len--;
-			}
-			if ((scope_len == 4 && memcmp(scope_name, "none", 4) == 0) ||
-			    (scope_len == 5 && memcmp(scope_name, "none\0", 5) == 0)) {
-				_send_scope_force_unscoped = true;
-				memset(_send_scope.key, 0, sizeof(_send_scope.key));
+			if (len >= 2 + 16) {
+				memcpy(_send_scope.key, &data[2], sizeof(_send_scope.key));
 			} else {
-				_send_scope_force_unscoped = false;
-				if (len >= 2 + 16) {
-					memcpy(_send_scope.key, &data[2], sizeof(_send_scope.key));
-				} else {
-					memset(_send_scope.key, 0, sizeof(_send_scope.key));
-				}
+				memset(_send_scope.key, 0, sizeof(_send_scope.key));
 			}
+			_send_scope_force_unscoped = false;
 			sendPacketOk();
 		} else if (len == 2 && data[1] == 1) {
 			_send_scope_force_unscoped = true;
