@@ -256,7 +256,8 @@ static bool configParamsEqual(const struct lora_modem_config &a,
 	       a.tx_power == b.tx_power &&
 	       a.tx == b.tx &&
 	       a.iq_inverted == b.iq_inverted &&
-	       a.public_network == b.public_network;
+	       a.public_network == b.public_network &&
+	       a.cad.mode == b.cad.mode;
 }
 
 /**
@@ -275,6 +276,7 @@ static bool onlyDirectionDiffers(const struct lora_modem_config &a,
 	       a.tx_power == b.tx_power &&
 	       a.iq_inverted == b.iq_inverted &&
 	       a.public_network == b.public_network &&
+	       a.cad.mode == b.cad.mode &&
 	       a.tx != b.tx;
 }
 
@@ -362,6 +364,13 @@ void LoRaRadioBase::begin()
 	 */
 
 	startReceive();
+
+	/* Sync _rx_boost_enabled to the driver.  The driver initialises its own
+	 * rx_boost_enabled flag from DTS (rx-boosted property), which may differ
+	 * from our constructor default (true).  Push our intent now so the
+	 * hardware state matches _rx_boost_enabled from the moment begin()
+	 * returns, before the caller applies prefs via setRxBoost(). */
+	hwSetRxBoost(_rx_boost_enabled);
 
 	uint32_t freq = _prefs ? (uint32_t)(_prefs->freq * 1000000.0f)
 			       : LoRaConfig::FREQ_HZ;

@@ -28,6 +28,7 @@ Dispatcher::Dispatcher(Radio &radio, MillisecondClock &ms, PacketManager &mgr)
 	: _radio(&radio), _ms(&ms), _mgr(&mgr)
 {
 	outbound = nullptr;
+	outbound_priority = 0;
 	total_air_time = rx_air_time = 0;
 	next_tx_time = 0;
 	cad_busy_start = 0;
@@ -410,6 +411,10 @@ void Dispatcher::checkSend()
 	}
 	cad_busy_start = 0;
 
+	/* Snapshot the priority of the packet we're about to dequeue so it
+	 * can be preserved if the send attempt fails and we need to re-queue.
+	 * Must be called before getNextOutbound() removes the entry. */
+	outbound_priority = _mgr->peekNextOutboundPriority(now);
 	outbound = _mgr->getNextOutbound(now);
 	if (outbound) {
 		uint8_t raw[MAX_TRANS_UNIT];
@@ -460,7 +465,7 @@ void Dispatcher::checkSend()
 				LOG_DBG("checkSend: final gate blocked TX (isReceiving=%d, isRadioReady=%d, inRecvMode=%d)",
 					(int)final_is_receiving, (int)final_is_radio_ready,
 					(int)_radio->isInRecvMode());
-				_mgr->queueOutbound(outbound, 0, futureMillis((int)retry));
+				_mgr->queueOutbound(outbound, outbound_priority, futureMillis((int)retry));
 				outbound = nullptr;
 				if (_tx_queued_cb) {
 					_tx_queued_cb(retry, _tx_queued_user_data);
@@ -473,7 +478,7 @@ void Dispatcher::checkSend()
 				uint32_t retry = getCADFailRetryDelay();
 				LOG_ERR("checkSend: startSendRaw failed! re-queuing delay=%u", retry);
 				logTxFail(outbound, outbound->getRawLength());
-				_mgr->queueOutbound(outbound, 0, futureMillis((int)retry));
+				_mgr->queueOutbound(outbound, outbound_priority, futureMillis((int)retry));
 				outbound = nullptr;
 				if (_tx_queued_cb) {
 					_tx_queued_cb(retry, _tx_queued_user_data);

@@ -28,6 +28,7 @@ public:
 	virtual Packet *removeOutboundByIdx(int i) = 0;
 	virtual uint32_t getOutboundSchedule(int i) const = 0;
 	virtual bool rescheduleOutbound(int i, uint32_t new_scheduled_for) = 0;
+	virtual uint8_t peekNextOutboundPriority(uint32_t now) const = 0;
 	virtual void queueInbound(Packet *packet, uint32_t scheduled_for) = 0;
 	virtual Packet *getNextInbound(uint32_t now) = 0;
 };
@@ -48,6 +49,7 @@ typedef uint32_t DispatcherAction;
 
 class Dispatcher {
 	Packet *outbound;
+	uint8_t outbound_priority;
 	uint32_t outbound_expiry, outbound_start, total_air_time, rx_air_time;
 	uint32_t next_tx_time;
 	uint32_t cad_busy_start;

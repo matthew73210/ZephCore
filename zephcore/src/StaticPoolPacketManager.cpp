@@ -96,6 +96,17 @@ struct PacketQueue {
 		return (i < _num) ? _schedule_table[i] : 0;
 	}
 
+	/* Priority of the next packet that get(now) would return, without
+	 * removing it.  Returns 0xFF if no due packet exists. */
+	uint8_t peekPriority(uint32_t now) const {
+		uint8_t best = 0xFF;
+		for (int j = 0; j < _num; j++) {
+			if ((int32_t)(_schedule_table[j] - now) > 0) continue;
+			if (_pri_table[j] < best) best = _pri_table[j];
+		}
+		return best;
+	}
+
 	bool reschedule(int i, uint32_t new_scheduled_for) {
 		if (i >= _num) return false;
 		_schedule_table[i] = new_scheduled_for;
@@ -191,6 +202,11 @@ uint32_t StaticPoolPacketManager::getOutboundSchedule(int i) const
 bool StaticPoolPacketManager::rescheduleOutbound(int i, uint32_t new_scheduled_for)
 {
 	return _send_queue.reschedule(i, new_scheduled_for);
+}
+
+uint8_t StaticPoolPacketManager::peekNextOutboundPriority(uint32_t now) const
+{
+	return _send_queue.peekPriority(now);
 }
 
 void StaticPoolPacketManager::queueInbound(Packet *packet, uint32_t scheduled_for)
