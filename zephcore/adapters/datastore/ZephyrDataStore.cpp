@@ -26,6 +26,50 @@ struct BlobRec {
 	uint8_t data[MAX_ADVERT_PKT_LEN];
 };
 
+typedef bool (*AtomicWriteFn)(struct fs_file_t *file, void *ctx);
+
+static bool atomicWriteTempFile(const char *path, AtomicWriteFn write_fn, void *ctx, const char *op_tag)
+{
+	char tmp_path[56];
+	int pl = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+	if (pl <= 0 || pl >= (int)sizeof(tmp_path)) {
+		LOG_ERR("%s: path too long", op_tag);
+		return false;
+	}
+
+	fs_unlink(tmp_path);
+
+	struct fs_file_t file;
+	fs_file_t_init(&file);
+	int rc = fs_open(&file, tmp_path, FS_O_CREATE | FS_O_WRITE);
+	if (rc < 0) {
+		LOG_ERR("%s: open %s failed: %d", op_tag, tmp_path, rc);
+		return false;
+	}
+
+	bool write_ok = write_fn(&file, ctx);
+	int sync_rc = fs_sync(&file);
+	fs_close(&file);
+	if (!write_ok || sync_rc < 0) {
+		if (!write_ok) {
+			LOG_ERR("%s: write failed", op_tag);
+		}
+		if (sync_rc < 0) {
+			LOG_ERR("%s: sync failed: %d", op_tag, sync_rc);
+		}
+		fs_unlink(tmp_path);
+		return false;
+	}
+
+	rc = fs_rename(tmp_path, path);
+	if (rc < 0) {
+		LOG_ERR("%s: rename %s -> %s failed: %d", op_tag, tmp_path, path, rc);
+		fs_unlink(tmp_path);
+		return false;
+	}
+	return true;
+}
+
 /* Track mount status - filesystems are automounted via DTS fstab */
 static bool lfs_mounted;
 static bool ext_lfs_mounted;
@@ -117,49 +161,26 @@ bool ZephyrDataStore::openRead(const char *path, uint8_t *buf, size_t buf_sz, si
 	return true;
 }
 
-/* Power-safe replace: used for identity + prefs; channels use the same .tmp/sync/rename in saveChannels(). Contacts stay direct write (space). */
+struct AtomicReplaceCtx {
+	const uint8_t *buf;
+	size_t len;
+};
+
+static bool atomicReplaceWriter(struct fs_file_t *file, void *ctx)
+{
+	AtomicReplaceCtx *c = static_cast<AtomicReplaceCtx *>(ctx);
+	ssize_t n = fs_write(file, c->buf, c->len);
+	return !(n < 0 || (size_t)n != c->len);
+}
+
+/* Power-safe replace helper used for identity + prefs. */
 bool ZephyrDataStore::atomicReplaceFile(const char *path, const uint8_t *buf, size_t len)
 {
-	char tmp_path[56];
-	int pl = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
-	if (pl <= 0 || pl >= (int)sizeof(tmp_path)) {
-		LOG_ERR("atomicReplaceFile: path too long");
-		return false;
-	}
-
-	fs_unlink(tmp_path);
-
-	struct fs_file_t file;
-	fs_file_t_init(&file);
-	int rc = fs_open(&file, tmp_path, FS_O_CREATE | FS_O_WRITE);
-	if (rc < 0) {
-		LOG_ERR("atomicReplaceFile: open %s failed: %d", tmp_path, rc);
-		return false;
-	}
-
-	ssize_t n = fs_write(&file, buf, len);
-	if (n < 0 || (size_t)n != len) {
-		LOG_ERR("atomicReplaceFile: write %s failed (%d)", tmp_path, (int)n);
-		fs_close(&file);
-		fs_unlink(tmp_path);
-		return false;
-	}
-
-	rc = fs_sync(&file);
-	fs_close(&file);
-	if (rc < 0) {
-		LOG_ERR("atomicReplaceFile: sync %s failed: %d", tmp_path, rc);
-		fs_unlink(tmp_path);
-		return false;
-	}
-
-	rc = fs_rename(tmp_path, path);
-	if (rc < 0) {
-		LOG_ERR("atomicReplaceFile: rename %s -> %s failed: %d", tmp_path, path, rc);
-		fs_unlink(tmp_path);
-		return false;
-	}
-	return true;
+	AtomicReplaceCtx ctx = {
+		.buf = buf,
+		.len = len,
+	};
+	return atomicWriteTempFile(path, atomicReplaceWriter, &ctx, "atomicReplaceFile");
 }
 
 bool ZephyrDataStore::copyFile(const char *src, const char *dst)
@@ -621,37 +642,63 @@ void ZephyrDataStore::loadContacts(DataStoreHost *host)
 void ZephyrDataStore::saveContacts(DataStoreHost *host)
 {
 	const char *path = contactsFile();
+	bool use_atomic = _has_ext_fs;
+	const char *save_mode = use_atomic ? "atomic" : "direct";
 
-	if (exists(path)) {
+	if (!use_atomic && exists(path)) {
 		fs_unlink(path);
 	}
 
 	struct fs_file_t file;
-	fs_file_t_init(&file);
-	int rc = fs_open(&file, path, FS_O_CREATE | FS_O_WRITE);
-	if (rc < 0) {
-		LOG_ERR("saveContacts: fs_open(%s) failed: %d", path, rc);
-		return;
-	}
-
 	uint8_t rec[CONTACT_DATA_SZ];
 	uint32_t idx = 0;
 	ContactInfo c;
+	bool write_ok = true;
 
-	while (host->getContactForSave(idx, c)) {
-		contact_to_record(c, rec);
-
-		if (fs_write(&file, rec, CONTACT_DATA_SZ) != (ssize_t)CONTACT_DATA_SZ) {
-			LOG_ERR("saveContacts: write failed at record %u", idx);
-			break;
+	auto write_contacts = [&](struct fs_file_t *dst) -> bool {
+		while (host->getContactForSave(idx, c)) {
+			contact_to_record(c, rec);
+			if (fs_write(dst, rec, CONTACT_DATA_SZ) != (ssize_t)CONTACT_DATA_SZ) {
+				LOG_ERR("saveContacts: write failed at record %u", idx);
+				return false;
+			}
+			idx++;
 		}
-		idx++;
+		return true;
+	};
+
+	if (use_atomic) {
+		struct ContactsWriterCtx {
+			decltype(write_contacts) *fn;
+		} ctx = { &write_contacts };
+		auto atomic_contacts_writer = [](struct fs_file_t *dst, void *arg) -> bool {
+			ContactsWriterCtx *cctx = static_cast<ContactsWriterCtx *>(arg);
+			return (*cctx->fn)(dst);
+		};
+		write_ok = atomicWriteTempFile(path, atomic_contacts_writer, &ctx, "saveContacts");
+	} else {
+		fs_file_t_init(&file);
+		int rc = fs_open(&file, path, FS_O_CREATE | FS_O_WRITE);
+		if (rc < 0) {
+			LOG_ERR("saveContacts: fs_open(%s) failed: %d", path, rc);
+			return;
+		}
+		write_ok = write_contacts(&file);
+		int sync_rc = fs_sync(&file);
+		fs_close(&file);
+		if (!write_ok || sync_rc < 0) {
+			if (sync_rc < 0) {
+				LOG_ERR("saveContacts: sync failed: %d", sync_rc);
+			}
+			return;
+		}
 	}
 
-	fs_sync(&file);
-	fs_close(&file);
-	LOG_INF("saveContacts: saved %u contacts to %s (%u bytes)",
-		idx, path, idx * CONTACT_DATA_SZ);
+	if (!write_ok) {
+		return;
+	}
+	LOG_INF("saveContacts: mode=%s saved %u contacts to %s (%u bytes)",
+		save_mode, idx, path, idx * CONTACT_DATA_SZ);
 }
 
 /* ── Channels ──────────────────────────────────────────────────────── */
@@ -686,44 +733,34 @@ void ZephyrDataStore::loadChannels(DataStoreHost *host)
 void ZephyrDataStore::saveChannels(DataStoreHost *host)
 {
 	const char *path = channelsFile();
-	char tmp_path[56];
-	int pl = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
-	if (pl <= 0 || pl >= (int)sizeof(tmp_path)) {
-		LOG_ERR("saveChannels: path too long");
-		return;
-	}
-
-	fs_unlink(tmp_path);
-
-	struct fs_file_t file;
-	fs_file_t_init(&file);
-	if (fs_open(&file, tmp_path, FS_O_CREATE | FS_O_WRITE) < 0) {
-		LOG_ERR("saveChannels: fs_open(%s) failed", tmp_path);
-		return;
-	}
 	uint8_t channel_idx = 0;
 	ChannelDetails ch;
 	uint8_t unused[4] = {0};
-	bool write_ok = true;
-	while (host->getChannelForSave(channel_idx, ch)) {
-		if (fs_write(&file, unused, 4) != 4 ||
-		    fs_write(&file, (uint8_t *)ch.name, 32) != 32 ||
-		    fs_write(&file, (uint8_t *)ch.channel.secret, 32) != 32) {
-			write_ok = false;
-			break;
+	struct ChannelsWriterCtx {
+		DataStoreHost *host;
+		uint8_t *channel_idx;
+		ChannelDetails *ch;
+		uint8_t *unused;
+	};
+	ChannelsWriterCtx ctx = {
+		.host = host,
+		.channel_idx = &channel_idx,
+		.ch = &ch,
+		.unused = unused,
+	};
+	auto channels_writer = [](struct fs_file_t *file, void *arg) -> bool {
+		ChannelsWriterCtx *c = static_cast<ChannelsWriterCtx *>(arg);
+		while (c->host->getChannelForSave(*c->channel_idx, *c->ch)) {
+			if (fs_write(file, c->unused, 4) != 4 ||
+			    fs_write(file, (uint8_t *)c->ch->name, 32) != 32 ||
+			    fs_write(file, (uint8_t *)c->ch->channel.secret, 32) != 32) {
+				return false;
+			}
+			(*c->channel_idx)++;
 		}
-		channel_idx++;
-	}
-	int sync_rc = fs_sync(&file);
-	fs_close(&file);
-	if (!write_ok || sync_rc < 0) {
-		LOG_ERR("saveChannels: write/sync failed");
-		fs_unlink(tmp_path);
-		return;
-	}
-	if (fs_rename(tmp_path, path) < 0) {
-		LOG_ERR("saveChannels: rename %s failed", tmp_path);
-		fs_unlink(tmp_path);
+		return true;
+	};
+	if (!atomicWriteTempFile(path, channels_writer, &ctx, "saveChannels")) {
 		return;
 	}
 	LOG_INF("saveChannels: saved %u channels to %s", channel_idx, path);
