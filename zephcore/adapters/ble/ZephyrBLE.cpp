@@ -22,7 +22,6 @@ LOG_MODULE_REGISTER(zephcore_ble, CONFIG_ZEPHCORE_BLE_LOG_LEVEL);
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/services/nus.h>
-#include <zephyr/bluetooth/services/nus/inst.h>
 #include <zephyr/settings/settings.h>
 
 #include "ZephyrBLE.h"
@@ -187,12 +186,6 @@ BT_GATT_SERVICE_DEFINE(secure_nus_svc,
 		BT_GATT_PERM_WRITE_AUTHEN,
 		NULL, secure_nus_rx_write, NULL),
 );
-
-static sys_slist_t secure_nus_cbs_list = SYS_SLIST_STATIC_INIT(&secure_nus_cbs_list);
-STRUCT_SECTION_ITERABLE(bt_nus_inst, secure_nus) = {
-	.svc = &secure_nus_svc,
-	.cbs = &secure_nus_cbs_list,
-};
 
 /* ========== Work items ========== */
 
