@@ -859,11 +859,17 @@ size_t zephcore_ble_send(const uint8_t *data, uint16_t len)
 		}
 
 		/* Save to overflow — retried at 250ms intervals.
-		 * If overflow already pending, replace with newest frame
-		 * (push notifications are idempotent MSG_WAITING signals). */
+		 * If overflow is already occupied, drop the new frame rather
+		 * than clobber the buffered one.  Only MSG_WAITING / PATH_UPDATED
+		 * / CONTACTS_FULL are truly idempotent; most other push codes
+		 * (ADVERT, SEND_CONFIRMED, RAW_DATA, telemetry/status responses,
+		 * etc.) carry per-event data, so silent replacement = data loss.
+		 * Chat messages are unaffected — message bytes live in the
+		 * CompanionMesh offline queue and ride the lossless response
+		 * path (data[0] < 0x80) on sync. */
 		if (overflow_pending) {
-			LOG_DBG("overflow replaced: 0x%02x → 0x%02x",
-				overflow_frame.buf[0], data[0]);
+			LOG_WRN("overflow full, dropping push hdr=0x%02x", data[0]);
+			return 0;
 		}
 		overflow_frame = f;
 		overflow_pending = true;
