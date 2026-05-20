@@ -1484,6 +1484,7 @@ bool CompanionMesh::handleProtocolFrame(const uint8_t *data, size_t len)
 			c.out_path_len = data[i++];
 			memcpy(c.out_path, &data[i], MAX_PATH_SIZE); i += MAX_PATH_SIZE;
 			memcpy(c.name, &data[i], 32); i += 32;
+			c.name[31] = '\0';  /* defensive null-term — matches CMD_SET_CHANNEL pattern */
 			c.last_advert_timestamp = get_le32(&data[i]); i += 4;
 			c.gps_lat = 0;
 			c.gps_lon = 0;
