@@ -230,7 +230,6 @@ private:
 	uint32_t _next_refresh;
 	uint32_t _auto_off;
 	uint32_t _screen_off_ms;
-	uint32_t _next_batt_refresh;
 
 	/* State */
 	uint16_t _cached_batt_mv;

@@ -600,8 +600,9 @@ config ZEPHCORE_EASTER_EGG_DOOM
 	depends on ZEPHCORE_UI_DISPLAY && ZEPHCORE_UI_BUTTONS
 	help
 	  Hidden easter egg: Wolf3D-style raycaster on the OLED.
-	  Activate with double-click + single-click joystick center
-	  on the first page. Double-click to exit.
+	  Button UI: triple-press ENTER on the Messages page.
+	  Joystick UI: open the Tools menu and select "Doom".
+	  Press BACK/ESC to exit.
 	  Adds ~5KB flash and ~1.7KB RAM when enabled.
 
 config ZEPHCORE_UI_JOYSTICK

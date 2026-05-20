@@ -502,7 +502,7 @@ Non-blocking RTTTL parser on dedicated work queue. Predefined melodies for start
 
 ### 8.5 Doom Easter Egg
 
-Wolf3D-style raycaster on OLED: textured walls, 2 enemy types, shooting, HUD. Bypasses CFB, writes directly to display. ~1.7KB RAM, ~5KB flash. Enabled via `CONFIG_ZEPHCORE_EASTER_EGG_DOOM`. Triple-press ENTER on Messages page to activate.
+Wolf3D-style raycaster on OLED: textured walls, 2 enemy types, shooting, HUD. Bypasses CFB, writes directly to display. ~1.7KB RAM, ~5KB flash. Enabled via `CONFIG_ZEPHCORE_EASTER_EGG_DOOM`. Button UI: triple-press ENTER on Messages page. Joystick UI: Tools menu → "Doom".
 
 ---
 

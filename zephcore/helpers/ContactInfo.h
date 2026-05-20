@@ -9,7 +9,6 @@
 #include <mesh/MeshCore.h>
 
 #define OUT_PATH_UNKNOWN   0xFF
-#define OUT_PATH_SENT      0xFE  /* local-only marker */
 
 struct ContactInfo {
 	mesh::Identity id;

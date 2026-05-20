@@ -376,12 +376,12 @@ class UnreadScreen : public UIScreen {
 
 	struct MsgEntry {
 		uint32_t timestamp;
-		char origin[80];
+		char origin[32];
 		char msg[240];
 		bool read;
 	};
 
-	static const int MAX_UNREAD_MSGS = 32;
+	static const int MAX_UNREAD_MSGS = 16;
 	MsgEntry _entries[MAX_UNREAD_MSGS];
 	int _entry_count;
 	int _visible_unread_count;

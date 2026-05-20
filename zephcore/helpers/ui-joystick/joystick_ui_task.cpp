@@ -175,7 +175,7 @@ JoystickUITask::JoystickUITask()
 #endif
 	  _repeater_admin(nullptr), _curr(nullptr),
 	  _next_refresh(0), _auto_off(0), _screen_off_ms(AUTO_OFF_MILLIS),
-	  _next_batt_refresh(0), _cached_batt_mv(0), _battery_display_mode(0),
+	  _cached_batt_mv(0), _battery_display_mode(0),
 	  _brightness(100), _wake_on_msg(true), _ble_connected(false),
 	  _ble_enabled(true), _msgcount(0), _noise_floor(-120),
 	  _pkt_recv(0), _pkt_sent(0), _pkt_errors(0), _alert_expiry(0),
