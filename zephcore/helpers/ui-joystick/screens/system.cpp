@@ -616,6 +616,7 @@ bool AdvertScreen::handleInput(char key)
 #define GPS_HEADING_MIN_M  5.0f   /* min move to update heading (m) */
 #define GPS_MAX_SPEED_KMH  300.0f
 #define GPS_HEADING_HOLD_MS  4000
+#define ALT_CYCLE_MS         4000  /* lat/lon ↔ altitude flip period while a fix is held */
 
 GPSSettingsScreen::GPSSettingsScreen(JoystickUITask *task, mesh::RTCClock *rtc)
 	: _task(task), _rtc(rtc), _selected(0),
@@ -661,20 +662,12 @@ void GPSSettingsScreen::onDisplayOn()
 
 void GPSSettingsScreen::sampleGPS()
 {
-	/* Cycle between position and altitude view every 4 seconds */
-	uint32_t now = k_uptime_get_32();
-	if (_alt_cycle_ms == 0) {
-		_alt_cycle_ms = now + GPS_HEADING_HOLD_MS;
-	} else if (now >= _alt_cycle_ms) {
-		_show_alt = !_show_alt;
-		_alt_cycle_ms = now + GPS_HEADING_HOLD_MS;
-	}
-
 	if (!_task->isGPSAvailable() || !_task->getGPSState()) return;
 	struct gps_position pos;
 	gps_get_position(&pos);
 	if (!pos.valid) return;
 
+	uint32_t now = k_uptime_get_32();
 	if (now - _last_sample_ms < 1000) return;
 
 	int32_t lat = (int32_t)(pos.latitude_ndeg  / 1000LL);
@@ -746,6 +739,15 @@ int GPSSettingsScreen::render(JoystickDisplay &display)
 		snprintf(satellites_line, sizeof(satellites_line), "Sat: %d (%s)", sat, fix_str);
 
 		if (has_fix) {
+			/* Each fresh fix starts on lat/lon, flips every ALT_CYCLE_MS. */
+			uint32_t now = k_uptime_get_32();
+			if (_alt_cycle_ms == 0) {
+				_alt_cycle_ms = now + ALT_CYCLE_MS;
+			} else if (now >= _alt_cycle_ms) {
+				_show_alt = !_show_alt;
+				_alt_cycle_ms = now + ALT_CYCLE_MS;
+			}
+
 			if (_show_alt) {
 				float alt_m = (float)pos.altitude_mm / 1000.0f;
 				snprintf(lat_lon_line, sizeof(lat_lon_line), "Alt: %.1f m", (double)alt_m);
@@ -764,6 +766,9 @@ int GPSSettingsScreen::render(JoystickDisplay &display)
 				snprintf(speed_line, sizeof(speed_line), "%.1f km/h", (double)_speed_kmh);
 			}
 		} else {
+			/* No fix — reset cycle so the next fix starts on lat/lon. */
+			_alt_cycle_ms = 0;
+			_show_alt = false;
 			snprintf(lat_lon_line, sizeof(lat_lon_line), "Lat | Lon");
 			snprintf(speed_line, sizeof(speed_line), "Speed | Compass");
 		}
