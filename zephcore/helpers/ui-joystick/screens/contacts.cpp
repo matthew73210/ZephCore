@@ -559,7 +559,16 @@ bool ContactsScreen::handleInput(char key)
 			if (_submenu_selected == _idx_reset_path) {
 				ContactInfo *live = _task->getMesh()->lookupContactByPubKey(
 					_active_contact.id.pub_key, PUB_KEY_SIZE);
-				if (live) { live->out_path_len = 0; memset(live->out_path, 0, sizeof(live->out_path)); }
+				if (live) {
+					/* OUT_PATH_UNKNOWN (0xFF) marks "no saved path → flood".
+					 * Plain 0 would mean "0-hop direct" and the contact would
+					 * render as "direct" instead of forcing a flood-rediscover. */
+					live->out_path_len = OUT_PATH_UNKNOWN;
+					memset(live->out_path, 0, sizeof(live->out_path));
+					if (CompanionMesh *cm = static_cast<CompanionMesh *>(_task->getMesh())) {
+						cm->markContactsDirtyPublic();
+					}
+				}
 				_task->showAlert("Path reset", 800);
 				return true;
 			}
