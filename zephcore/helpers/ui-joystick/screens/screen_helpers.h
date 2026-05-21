@@ -541,13 +541,16 @@ static inline void renderT9Keypad(JoystickDisplay &display, const char * const *
 
 /* ===== buildChannelReplyPrefix ===== */
 /* Builds "@[SenderName] " from a "SenderName: text" channel message.
- * Returns false for outbound messages (OUT_PATH_SENT) or if no ": " separator
- * is found. out_buf must be at least (name_len + 5) bytes; 38 is always safe. */
+ * Returns false for outbound messages (any OUT_PATH_SENT* marker) or if
+ * no ": " separator is found. out_buf must be at least (name_len + 5)
+ * bytes; 38 is always safe. */
 static inline bool buildChannelReplyPrefix(
 	const char *msg, uint8_t path_len,
 	char *out_buf, size_t out_size
 ){
-	if (path_len == OUT_PATH_SENT) return false;
+	if (path_len == OUT_PATH_SENT ||
+		path_len == OUT_PATH_SENT_HEARD ||
+		path_len == OUT_PATH_SENT_UNHEARD) return false;
 	const char *sep = strstr(msg, ": ");
 	if (!sep || sep == msg) return false;
 	size_t nlen = (size_t)(sep - msg);

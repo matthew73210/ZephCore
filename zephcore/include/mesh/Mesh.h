@@ -34,13 +34,14 @@ class Mesh : public Dispatcher {
 	void routeDirectRecvAcks(Packet *packet, uint32_t delay_millis);
 	DispatcherAction forwardMultipartDirect(Packet *pkt);
 
+protected:
+	ContentionTracker _contention;
 public:
 	/* Made public so the UI layer can query/extract per-packet dupe counts
 	 * for outbound-flood feedback (joystick channel-send "heard a repeat?"). */
-	class ContentionTracker& getContentionTracker() { return _contention; }
-	const class ContentionTracker& getContentionTracker() const { return _contention; }
+	ContentionTracker& getContentionTracker() { return _contention; }
+	const ContentionTracker& getContentionTracker() const { return _contention; }
 protected:
-	ContentionTracker _contention;
 #ifdef CONFIG_ZEPHCORE_APC
 	PowerController _power_ctrl;
 	PowerController& getPowerController() { return _power_ctrl; }
