@@ -64,6 +64,8 @@ void mesh_save_brightness(uint8_t brightness);
 void mesh_save_and_restart(void);
 void mesh_set_wake_on_msg(bool enabled);
 void mesh_save_screen_off_secs(uint16_t secs);
+/* path_hash_mode: 0/1/2 → 1/2/3 bytes per hop appended to outbound flood path */
+void mesh_save_path_hash_mode(uint8_t mode);
 
 #ifdef __cplusplus
 }

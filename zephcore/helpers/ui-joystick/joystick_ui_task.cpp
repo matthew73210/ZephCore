@@ -951,6 +951,14 @@ void JoystickUITask::adjustScreenOff(int32_t delta_ms)
 	mesh_save_screen_off_secs((uint16_t)(_screen_off_ms / 1000));
 }
 
+void JoystickUITask::cyclePathHashMode()
+{
+	if (!_prefs) return;
+	uint8_t next = (uint8_t)((_prefs->path_hash_mode + 1) % 3);  /* 0→1→2→0 */
+	_prefs->path_hash_mode = next;
+	mesh_save_path_hash_mode(next);
+}
+
 void JoystickUITask::toggleWakeOnMsg()
 {
 	_wake_on_msg = !_wake_on_msg;

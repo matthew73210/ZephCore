@@ -21,7 +21,7 @@ static const char * const kSysCatLabels[] = { "Device", "Display", "Info", "Powe
 static const int kSysCatCount = 4;
 
 /* Device submenu items */
-enum SysDevItem { SYSDEV_BUZZER=0, SYSDEV_BLUETOOTH, SYSDEV_OFFGRID, SYSDEV_LEDS, SYSDEV_BLE_CODE, SYSDEV_DFU, SYSDEV_TELEMETRY, SYSDEV_RENAME, SYSDEV_COUNT };
+enum SysDevItem { SYSDEV_BUZZER=0, SYSDEV_BLUETOOTH, SYSDEV_OFFGRID, SYSDEV_LEDS, SYSDEV_BLE_CODE, SYSDEV_PATHHASH, SYSDEV_DFU, SYSDEV_TELEMETRY, SYSDEV_RENAME, SYSDEV_COUNT };
 
 #define DFU_CONFIRM_WINDOW_MS 3000
 /* Display submenu items */
@@ -56,11 +56,12 @@ int SystemScreen::render(JoystickDisplay &display)
 		return 500;
 	}
 	if (_mode == SYSMODE_DEVICE) {
-		char bt_label[24], buz_label[24], og_label[24], led_label[24], dfu_label[24];
+		char bt_label[24], buz_label[24], og_label[24], led_label[24], dfu_label[24], ph_label[24];
 		snprintf(buz_label, sizeof(buz_label), "Buzzer: %s", _task->isBuzzerQuiet() ? "OFF" : "ON");
 		snprintf(bt_label, sizeof(bt_label), "Bluetooth: %s", _task->isSerialEnabled() ? "ON" : "OFF");
 		snprintf(og_label, sizeof(og_label), "Offgrid: %s", _task->isOffgridEnabled() ? "ON" : "OFF");
 		snprintf(led_label, sizeof(led_label), "LEDs: %s", _task->isLedsDisabled() ? "OFF" : "ON");
+		snprintf(ph_label, sizeof(ph_label), "Path hash: %db", (int)_task->getPathHashBytes());
 		uint32_t now = k_uptime_get_32();
 		bool dfu_pending = (_dfu_confirm_time != 0 &&
 							(now - _dfu_confirm_time) <= DFU_CONFIRM_WINDOW_MS);
@@ -69,6 +70,7 @@ int SystemScreen::render(JoystickDisplay &display)
 		items[SYSDEV_BUZZER] = buz_label;
 		items[SYSDEV_BLUETOOTH] = bt_label;
 		items[SYSDEV_BLE_CODE] = "BLE Code";
+		items[SYSDEV_PATHHASH] = ph_label;
 		items[SYSDEV_TELEMETRY] = "Telemetry";
 		items[SYSDEV_RENAME] = "Rename node";
 		items[SYSDEV_OFFGRID] = og_label;
@@ -159,6 +161,13 @@ bool SystemScreen::handleInput(char c)
 				_task->toggleLeds();
 				_task->showAlert(_task->isLedsDisabled() ? "LEDs: OFF" : "LEDs: ON", 1000);
 				return true;
+			case SYSDEV_PATHHASH: {
+				_task->cyclePathHashMode();
+				char alert[24];
+				snprintf(alert, sizeof(alert), "Path hash: %db", (int)_task->getPathHashBytes());
+				_task->showAlert(alert, 1000);
+				return true;
+			}
 			case SYSDEV_DFU: {
 				uint32_t now = k_uptime_get_32();
 				if (_dfu_confirm_time != 0 &&

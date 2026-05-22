@@ -95,6 +95,10 @@ public:
 	void adjustBrightness(int delta);
 	bool getWakeOnMsg() const { return _wake_on_msg; }
 	void toggleWakeOnMsg();
+	/* Path-hash-mode: 0/1/2 → 1/2/3 bytes per hop appended to outbound flood
+	 * path. Cycles through the three valid settings; persists to prefs. */
+	uint8_t getPathHashBytes() const { return _prefs ? (uint8_t)(_prefs->path_hash_mode + 1) : 1; }
+	void cyclePathHashMode();
 	bool isBuzzerQuiet() const;
 	void toggleBuzzer();
 	bool isGPSAvailable() const;

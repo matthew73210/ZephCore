@@ -44,6 +44,7 @@ LOG_MODULE_REGISTER(zephcore_ui_actions, CONFIG_ZEPHCORE_UI_ACTIONS_LOG_LEVEL);
 #define UI_ACTION_SAVE_RESTART      BIT(8)
 #define UI_ACTION_WAKE_ON_MSG_SAVE  BIT(9)
 #define UI_ACTION_SCREEN_OFF_SAVE   BIT(10)
+#define UI_ACTION_PATH_HASH_MODE_SAVE BIT(11)
 
 /* Module-local pointers, set by init */
 static CompanionMesh *s_mesh;
@@ -68,6 +69,7 @@ static atomic_t pending_ble_disabled;
 static atomic_t pending_brightness;
 static atomic_t pending_wake_on_msg;
 static atomic_t pending_screen_off_secs;
+static atomic_t pending_path_hash_mode;
 
 extern "C" void ui_mesh_actions_init(struct k_event *mesh_events,
 				     uint32_t mesh_event_ui_action,
@@ -141,6 +143,13 @@ extern "C" void mesh_save_screen_off_secs(uint16_t secs)
 {
 	atomic_set(&pending_screen_off_secs, (atomic_val_t)secs);
 	atomic_or(&pending_ui_actions, UI_ACTION_SCREEN_OFF_SAVE);
+	k_event_post(s_mesh_events, s_mesh_event_ui_action);
+}
+
+extern "C" void mesh_save_path_hash_mode(uint8_t mode)
+{
+	atomic_set(&pending_path_hash_mode, (atomic_val_t)mode);
+	atomic_or(&pending_ui_actions, UI_ACTION_PATH_HASH_MODE_SAVE);
 	k_event_post(s_mesh_events, s_mesh_event_ui_action);
 }
 
@@ -283,6 +292,14 @@ extern "C" void mesh_handle_ui_actions(void)
 	if (actions & UI_ACTION_SCREEN_OFF_SAVE) {
 		s_mesh->prefs.screen_off_secs = (uint16_t)atomic_get(&pending_screen_off_secs);
 		LOG_INF("screen_off_secs=%d (button)", s_mesh->prefs.screen_off_secs);
+		need_save = true;
+	}
+
+	if (actions & UI_ACTION_PATH_HASH_MODE_SAVE) {
+		uint8_t mode = (uint8_t)atomic_get(&pending_path_hash_mode);
+		if (mode > 2) mode = 2;  /* clamp to valid range (0-2 → 1-3 bytes) */
+		s_mesh->prefs.path_hash_mode = mode;
+		LOG_INF("path_hash_mode=%d (%d bytes per hop)", mode, mode + 1);
 		need_save = true;
 	}
 
