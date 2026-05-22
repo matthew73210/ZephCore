@@ -118,10 +118,11 @@ public:
 	bool millisHasNowPassed(uint32_t timestamp) const;
 	uint32_t futureMillis(int millis_from_now) const;
 
+	bool tryParsePacket(Packet *pkt, const uint8_t *raw, int len);
+
 private:
 	void updateTxBudget();
 	uint32_t getMaxTxBudgetMs() const;
-	bool tryParsePacket(Packet *pkt, const uint8_t *raw, int len);
 	void checkRecv();
 	void checkSend();
 };

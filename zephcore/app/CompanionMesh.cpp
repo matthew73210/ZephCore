@@ -83,6 +83,7 @@ LOG_MODULE_REGISTER(zephcore_companion, CONFIG_ZEPHCORE_MAIN_LOG_LEVEL);
 #define CMD_SEND_CHANNEL_DATA       0x3E
 #define CMD_SET_DEFAULT_FLOOD_SCOPE 0x3F  /* v11+ */
 #define CMD_GET_DEFAULT_FLOOD_SCOPE 0x40  /* v11+ */
+#define CMD_SEND_RAW_PACKET         0x41  /* v12+ */
 
 /* Response packet types */
 #define PACKET_OK               0x00
@@ -3126,6 +3127,26 @@ bool CompanionMesh::handleProtocolFrame(const uint8_t *data, size_t len)
 				}
 			} else {
 				sendPacketError(ERR_NOT_FOUND);
+			}
+		} else {
+			sendPacketError(ERR_ILLEGAL_ARG);
+		}
+		return true;
+
+	case CMD_SEND_RAW_PACKET:
+		if (len >= 4) {
+			mesh::Packet *pkt = obtainNewPacket();
+			if (pkt) {
+				uint8_t priority = data[1];
+				if (tryParsePacket(pkt, &data[2], len - 2)) {
+					sendPacket(pkt, priority, 0);
+					sendPacketOk();
+				} else {
+					releasePacket(pkt);
+					sendPacketError(ERR_ILLEGAL_ARG);
+				}
+			} else {
+				sendPacketError(ERR_TABLE_FULL);
 			}
 		} else {
 			sendPacketError(ERR_ILLEGAL_ARG);

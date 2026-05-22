@@ -90,8 +90,10 @@ public:
 	MeshTables *getTables() const { return _tables; }
 
 	Packet *createAdvert(const LocalIdentity &id, const uint8_t *app_data = nullptr, size_t app_data_len = 0);
-	Packet *createAck(uint32_t ack_crc);
-	Packet *createMultiAck(uint32_t ack_crc, uint8_t remaining);
+	Packet *createAck(const uint8_t *ack, uint8_t len);
+	Packet *createAck(uint32_t ack_crc) { return createAck((const uint8_t *)&ack_crc, 4); }
+	Packet *createMultiAck(const uint8_t *ack, uint8_t len, uint8_t remaining);
+	Packet *createMultiAck(uint32_t ack_crc, uint8_t remaining) { return createMultiAck((const uint8_t *)&ack_crc, 4, remaining); }
 	Packet *createControlData(const uint8_t *data, size_t len);
 	Packet *createDatagram(uint8_t type, const Identity &dest, const uint8_t *secret, const uint8_t *data, size_t len);
 	Packet *createAnonDatagram(uint8_t type, const LocalIdentity &sender, const Identity &dest, const uint8_t *secret, const uint8_t *data, size_t data_len);
