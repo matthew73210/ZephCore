@@ -27,9 +27,7 @@ LOG_MODULE_REGISTER(zephcore_ui_actions, CONFIG_ZEPHCORE_UI_ACTIONS_LOG_LEVEL);
 #include <ZephyrBLE.h>
 #include <ZephyrSensorManager.h>
 #include "ui_task.h"
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 #include <joystick_ui_hooks.h>
-#endif
 #include "ui_mesh_actions.h"
 
 /* UI action bit flags — set from input thread, consumed by mesh event loop */
@@ -335,12 +333,10 @@ extern "C" void mesh_housekeeping_ui_refresh(void)
 		s_mesh->prefs.cr,
 		s_mesh->prefs.tx_power_dbm,
 		s_lora_radio->getNoiseFloor());
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 	ui_notify_radio_stats(
 		s_lora_radio->getPacketsRecv(),
 		s_lora_radio->getPacketsSent(),
 		s_lora_radio->getPacketsRecvErrors());
-#endif
 
 	/* Update GPS satellite count even without fix */
 	if (gps_is_enabled()) {

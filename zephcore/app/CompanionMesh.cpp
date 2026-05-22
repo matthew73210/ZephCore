@@ -22,9 +22,7 @@
 #include <ui_task.h>
 #define ZEPHCORE_HAS_UI_TASK 1
 #endif
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 #include <joystick_ui_hooks.h>
-#endif
 LOG_MODULE_REGISTER(zephcore_companion, CONFIG_ZEPHCORE_MAIN_LOG_LEVEL);
 
 /* Protocol commands (matches Arduino companion_radio) - sorted by opcode */
@@ -697,18 +695,12 @@ ContactInfo *CompanionMesh::processAck(const uint8_t *data)
 			return lookupContactByPubKey(ci.id.pub_key, PUB_KEY_SIZE);
 		}
 	}
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
-	/* Joystick UI tracks its own pending DMs; let it match before falling
-	 * through to connection-keep-alive ACKs. The joystick handles delivery
-	 * indicator + BLE-mirror queueing internally — we just need the matched
-	 * contact pointer for BaseChatMesh's return-path-retry hook. */
 	{
 		uint8_t recipient_pubkey[6];
 		if (ui_joystick_try_match_ack(ack_crc, recipient_pubkey)) {
 			return lookupContactByPubKey(recipient_pubkey, 6);
 		}
 	}
-#endif
 	return checkConnectionsAck(data);
 }
 
@@ -887,12 +879,10 @@ void CompanionMesh::onCommandDataRecv(const ContactInfo &contact, mesh::Packet *
 	markConnectionActive(contact);
 	queueContactMessage(contact, pkt, TXT_TYPE_CLI_DATA, sender_timestamp, nullptr, 0, text);
 	sendPush(PUSH_CODE_MSG_WAITING);
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 	{
 		struct ui_joystick_cli_data cli = { text };
 		ui_notify_joystick_event(UI_JOYSTICK_CLI_RESPONSE, contact.id.pub_key, &cli);
 	}
-#endif
 }
 
 void CompanionMesh::onSignedMessageRecv(const ContactInfo &contact, mesh::Packet *pkt,
@@ -1190,9 +1180,7 @@ uint8_t CompanionMesh::onContactRequest(const ContactInfo &contact, uint32_t sen
 
 void CompanionMesh::logTx(mesh::Packet *, int)
 {
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 	ui_notify_packet_sent();
-#endif
 }
 
 void CompanionMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, uint8_t len)
@@ -1243,7 +1231,6 @@ void CompanionMesh::onContactResponse(const ContactInfo &contact, const uint8_t 
 			i += 6;
 		}
 		sendPush(rsp[0], &rsp[1], i - 1);
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 		{
 			struct ui_joystick_login_data login = {
 				rsp[0] == PUSH_CODE_LOGIN_SUCCESS,
@@ -1252,7 +1239,6 @@ void CompanionMesh::onContactResponse(const ContactInfo &contact, const uint8_t 
 			};
 			ui_notify_joystick_event(UI_JOYSTICK_LOGIN_RESULT, contact.id.pub_key, &login);
 		}
-#endif
 		return;
 	}
 
@@ -1340,10 +1326,6 @@ void CompanionMesh::onContactResponse(const ContactInfo &contact, const uint8_t 
 		return;
 	}
 
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
-	/* Unmatched response: forward to joystick so it can check for a pending ping.
-	 * RepeaterStats.last_snr sits at byte offset 42 in the struct payload (after the
-	 * 4-byte tag prefix), so data[46].  Only valid when the response is long enough. */
 	{
 		int8_t snr_remote = INT8_MIN;
 		if (len >= 48) {
@@ -1359,7 +1341,6 @@ void CompanionMesh::onContactResponse(const ContactInfo &contact, const uint8_t 
 		};
 		ui_notify_joystick_event(UI_JOYSTICK_REQ_RESPONSE, contact.id.pub_key, &rr);
 	}
-#endif
 }
 
 /* Raw packet logging - sends all RX packets to app for "heard X repeats" etc */
@@ -1418,7 +1399,6 @@ void CompanionMesh::onControlDataRecv(mesh::Packet *packet)
 		return;
 	}
 
-#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 	if (packet->payload_len >= 6 + PUB_KEY_SIZE &&
 	    (packet->payload[0] & 0xF0) == CTL_TYPE_NODE_DISCOVER_RESP &&
 	    (packet->payload[0] & 0x0F) == ADV_TYPE_REPEATER) {
@@ -1427,7 +1407,6 @@ void CompanionMesh::onControlDataRecv(mesh::Packet *packet)
 		};
 		ui_notify_joystick_event(UI_JOYSTICK_DISCOVER_RESP, &packet->payload[6], &dd);
 	}
-#endif
 
 	uint8_t buf[MAX_FRAME_SIZE];
 	int i = 0;

@@ -1,9 +1,11 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Track which source last set the RTC for UI display.
+ * Joystick UI: track which source last set the RTC (System > Info > Time).
  */
 
 #pragma once
+
+#include <zephyr/sys/util.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,11 +19,19 @@ enum time_sync_source {
 	TIME_SYNC_CLI,
 };
 
-/** Record a successful RTC set from @p src. */
-void time_sync_report(enum time_sync_source src);
+#if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 
-/** Label for System > Info > Time. GPS authority wins while gps_has_time_sync(). */
+void time_sync_report(enum time_sync_source src);
 const char *time_sync_display_label(void);
+
+#else
+
+static inline void time_sync_report(enum time_sync_source src)
+{
+	ARG_UNUSED(src);
+}
+
+#endif /* CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK */
 
 #ifdef __cplusplus
 }

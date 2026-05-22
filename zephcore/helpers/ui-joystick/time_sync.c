@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "time_sync.h"
+#include <time_sync.h>
 #include <adapters/gps/ZephyrGPSManager.h>
 #include <stdio.h>
 

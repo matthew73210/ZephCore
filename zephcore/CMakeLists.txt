@@ -430,7 +430,6 @@ target_sources(app PRIVATE
   adapters/sensors/ZephyrEnvSensors.cpp
   helpers/AdvertDataHelpers.cpp
   helpers/oled_power.c
-  helpers/time_sync.c
 )
 
 # ========== Radio Driver Selection ==========
@@ -615,6 +614,7 @@ endif()
 
 if(CONFIG_ZEPHCORE_UI_DISPLAY AND CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
   target_sources(app PRIVATE
+    helpers/ui-joystick/time_sync.c
     helpers/ui-joystick/joystick_ui_task.cpp
     helpers/ui-joystick/joystick_ui_hooks.cpp
     helpers/ui-joystick/screens/home.cpp
