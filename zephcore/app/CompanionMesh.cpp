@@ -796,7 +796,12 @@ void CompanionMesh::queueLocalSentContactMessage(const ContactInfo &contact,
 	}
 	memcpy(&frame[i], contact.id.pub_key, 6);
 	i += 6;
-	frame[i++] = OUT_PATH_SENT;        // mark as locally-originated
+	/* path_len = 0 → phone app renders "0 hops" / direct. OUT_PATH_SENT
+	 * (0xFE) gets misrendered as "62 hops" because the app does
+	 * path_len & 63 unconditionally. We're not over the air for the
+	 * BLE-app mirror; "0 hops between sender and viewer" is literally
+	 * true when you sent it yourself. */
+	frame[i++] = 0;
 	frame[i++] = TXT_TYPE_PLAIN;
 	put_le32(&frame[i], timestamp);
 	i += 4;
@@ -841,7 +846,9 @@ void CompanionMesh::queueLocalSentChannelMessage(uint8_t channel_idx,
 		frame[i++] = PACKET_CHANNEL_MSG_RECV;
 	}
 	frame[i++] = channel_idx;
-	frame[i++] = OUT_PATH_SENT;
+	/* path_len = 0 (matches the DM mirror — phone renders "0 hops"
+	 * instead of garbled-modulo-63 for OUT_PATH_SENT). */
+	frame[i++] = 0;
 	frame[i++] = TXT_TYPE_PLAIN;
 	put_le32(&frame[i], timestamp);
 	i += 4;
