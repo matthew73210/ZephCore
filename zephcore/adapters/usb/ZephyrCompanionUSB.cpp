@@ -4,6 +4,10 @@
  *
  * V3-framed USB CDC for companion mode. Extracted from main_companion.cpp.
  * Only compiled when CONFIG_LOG is enabled (debug builds).
+ *
+ * USBD lifecycle + 1200-baud DFU detection + DTR state tracking live in
+ * the shared ZephyrUSBCDC module; this file just runs the V3 frame parser
+ * on top of the CDC ACM UART and reacts to DTR-drop events from there.
  */
 
 #include <zephyr/kernel.h>
@@ -16,14 +20,13 @@
 LOG_MODULE_REGISTER(zephcore_usb, CONFIG_ZEPHCORE_USB_LOG_LEVEL);
 
 #include <ZephyrBLE.h>
-#include <adapters/board/ZephyrBoard.h>
 #include <app/CompanionMesh.h>
 
 #include "ZephyrCompanionUSB.h"
+#include "ZephyrUSBCDC.h"
 
 /* MAX_FRAME_SIZE defined in CompanionMesh.h */
 
-#define USB_DTR_CHECK_MS      10000   /* USB DTR poll interval - 10s for power savings */
 #define USB_RING_BUF_SIZE     512     /* USB RX ring buffer size */
 #define USB_FRAME_TIMEOUT_MS  2000    /* Partial frame timeout - reset parser after 2s of no completion */
 
@@ -35,31 +38,16 @@ static uint8_t usb_rx_buf[MAX_FRAME_SIZE + 2];  /* +2 for length prefix */
 static uint16_t usb_rx_idx;
 static uint16_t usb_frame_len;  /* Expected frame length (0 = waiting for header) */
 static uint32_t usb_frame_start_time;  /* Timestamp of first byte in current frame */
-static bool usb_dtr_active;
 
 /* Pointers to mesh event infrastructure (set by init) */
 static struct k_event *s_mesh_events;
 static struct k_work *s_rx_work;
 static uint32_t s_mesh_event_ble_rx;
-static mesh::ZephyrBoard *s_board;
 
 /* Work items */
 static void usb_rx_work_fn(struct k_work *work);
-static void usb_dtr_check_work_fn(struct k_work *work);
 
 K_WORK_DEFINE(usb_rx_work, usb_rx_work_fn);
-K_WORK_DELAYABLE_DEFINE(usb_dtr_check_work, usb_dtr_check_work_fn);
-
-/**
- * Reboot into the Adafruit nRF52 bootloader DFU mode.
- * Triggered by host opening USB CDC at 1200 baud then dropping DTR.
- */
-static void reboot_to_bootloader_dfu(void)
-{
-	LOG_INF("*** REBOOTING TO BOOTLOADER DFU ***");
-	s_board->rebootToBootloader();
-	CODE_UNREACHABLE;
-}
 
 /* USB CDC UART interrupt callback - puts bytes in ring buffer */
 static void usb_uart_isr(const struct device *dev, void *user_data)
@@ -160,51 +148,21 @@ static void usb_rx_work_fn(struct k_work *work)
 	}
 }
 
-/* USB DTR check - monitors DTR signal for disconnect detection
- * AND detects 1200bps baud rate for bootloader DFU trigger. */
-static void usb_dtr_check_work_fn(struct k_work *work)
+/* DTR-transition callback from the shared ZephyrUSBCDC module.
+ * On drop: host closed the port → reset parser, hand control back to BLE. */
+static void on_dtr_change(bool dtr_active)
 {
-	ARG_UNUSED(work);
-
-	if (!usb_dev) {
+	if (dtr_active) {
 		return;
 	}
-
-	uint32_t dtr = 0;
-	int err = uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_DTR, &dtr);
-	if (err) {
-		/* Line control not supported or error */
-		k_work_schedule(&usb_dtr_check_work, K_MSEC(USB_DTR_CHECK_MS));
-		return;
+	LOG_INF("usb_dtr: DTR dropped, USB disconnected");
+	if (zephcore_ble_get_active_iface() == ZEPHCORE_IFACE_USB) {
+		zephcore_ble_set_active_iface(ZEPHCORE_IFACE_NONE);
+		LOG_INF("usb_dtr: active_iface = IFACE_NONE");
 	}
-
-	bool dtr_now = (dtr != 0);
-
-	/* 1200bps DFU trigger: when host opens port at 1200 baud then
-	 * drops DTR, reboot into bootloader DFU mode.
-	 * This is the Arduino convention used by Adafruit nRF52 boards. */
-	if (usb_dtr_active && !dtr_now) {
-		uint32_t baud = 0;
-		uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_BAUD_RATE, &baud);
-		if (baud == 1200) {
-			reboot_to_bootloader_dfu();
-			/* Never returns */
-		}
-
-		/* Normal DTR drop - USB disconnected */
-		LOG_INF("usb_dtr: DTR dropped, USB disconnected");
-		if (zephcore_ble_get_active_iface() == ZEPHCORE_IFACE_USB) {
-			zephcore_ble_set_active_iface(ZEPHCORE_IFACE_NONE);
-			LOG_INF("usb_dtr: active_iface = IFACE_NONE");
-		}
-		/* Reset RX state */
-		ring_buf_reset(&usb_ring_buf);
-		usb_frame_len = 0;
-		usb_rx_idx = 0;
-	}
-
-	usb_dtr_active = dtr_now;
-	k_work_schedule(&usb_dtr_check_work, K_MSEC(USB_DTR_CHECK_MS));
+	ring_buf_reset(&usb_ring_buf);
+	usb_frame_len = 0;
+	usb_rx_idx = 0;
 }
 
 /* Send frame over USB with V3 length prefix */
@@ -242,10 +200,11 @@ void zephcore_usb_companion_init(struct k_event *mesh_events,
 				 uint32_t mesh_event_ble_rx,
 				 void *board)
 {
+	ARG_UNUSED(board);
+
 	s_mesh_events = mesh_events;
 	s_rx_work = rx_work;
 	s_mesh_event_ble_rx = mesh_event_ble_rx;
-	s_board = static_cast<mesh::ZephyrBoard *>(board);
 
 #if DT_HAS_COMPAT_STATUS_OKAY(zephyr_cdc_acm_uart)
 	usb_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
@@ -257,8 +216,9 @@ void zephcore_usb_companion_init(struct k_event *mesh_events,
 		uart_irq_callback_set(usb_dev, usb_uart_isr);
 		uart_irq_rx_enable(usb_dev);
 
-		/* Start DTR monitoring to detect terminal disconnect */
-		k_work_schedule(&usb_dtr_check_work, K_MSEC(USB_DTR_CHECK_MS));
+		/* DTR state changes (including disconnect) reach us via the
+		 * shared usbd_msg_callback — no polling work needed. */
+		zephcore_usbd_set_dtr_cb(on_dtr_change);
 	} else {
 		LOG_WRN("USB CDC device not ready");
 		usb_dev = NULL;

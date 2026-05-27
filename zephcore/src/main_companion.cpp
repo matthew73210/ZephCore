@@ -35,6 +35,7 @@ LOG_MODULE_REGISTER(zephcore_main, CONFIG_ZEPHCORE_MAIN_LOG_LEVEL);
 
 #if IS_ENABLED(CONFIG_LOG)
 #include <ZephyrCompanionUSB.h>
+#include <ZephyrUSBCDC.h>
 #endif
 
 #if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
@@ -525,8 +526,15 @@ int main(void)
 	/* Clear any stale bootloader magic from previous sessions */
 	zephyr_board.clearBootloaderMagic();
 
-	/* Brief settle — deferred logging will catch up once USB CDC enumerates */
-	k_sleep(K_MSEC(100));
+	/* USB CDC init up front so the host can enumerate, then block until the
+	 * host opens the port (DTR-high) — event-driven via the shared usbd
+	 * message callback.  Unplugged → 1 s timeout, banner is buffered for any
+	 * later attach.  CONFIG_LOG=n prod builds skip the whole stack. */
+#if IS_ENABLED(CONFIG_LOG) && DT_HAS_COMPAT_STATUS_OKAY(zephyr_cdc_acm_uart) && \
+	!IS_ENABLED(CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT)
+	zephcore_usbd_init();
+	zephcore_usbd_wait_dtr(1000);
+#endif
 	LOG_INF("=== ZephCore starting ===");
 
 	/* Log reset reason so we can diagnose random reboots */

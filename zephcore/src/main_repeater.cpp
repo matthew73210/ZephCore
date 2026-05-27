@@ -33,9 +33,9 @@ extern "C" void bt_ctlr_assert_handle(char *file, uint32_t line)
 }
 #endif
 
-/* USB CDC with 1200 baud touch detection (when not using auto-init) */
+/* USB CDC ACM init + 1200-baud DFU + DTR callbacks (shared with companion) */
 #if !IS_ENABLED(CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT)
-#include <ZephyrRepeaterUSB.h>
+#include <ZephyrUSBCDC.h>
 #endif
 
 #include <app/RepeaterDataStore.h>
@@ -384,8 +384,16 @@ int main(void)
 	zephyr_board.clearBootloaderMagic();
 #endif
 
-	/* Wait for USB CDC to enumerate before any logging */
-	k_sleep(K_MSEC(2000));
+	/* USB CDC init up front so the host can enumerate, then wait for the
+	 * host to open the port (DTR asserted) — event-driven via the usbd
+	 * message callback.  Unplugged → 2 s timeout, no banner; attached →
+	 * banner reaches the user the moment the port opens. */
+#if !IS_ENABLED(CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT) && DT_HAS_COMPAT_STATUS_OKAY(zephyr_cdc_acm_uart)
+	zephcore_usbd_init();
+#endif
+#if DT_HAS_COMPAT_STATUS_OKAY(zephyr_cdc_acm_uart)
+	zephcore_usbd_wait_dtr(2000);
+#endif
 	LOG_INF("=== ZephCore Repeater starting ===");
 
 #if IS_ENABLED(CONFIG_ZEPHCORE_WIFI_OTA)
@@ -515,10 +523,8 @@ int main(void)
 	k_work_schedule(&initial_advert_work, K_SECONDS(10));
 #endif
 
-	/* Initialize USB serial for CLI */
-#if !IS_ENABLED(CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT) && DT_HAS_COMPAT_STATUS_OKAY(zephyr_cdc_acm_uart)
-	zephcore_usbd_init();
-#endif
+	/* USB CDC was initialized earlier (right after clearBootloaderMagic).
+	 * Just acquire the device handle for the CLI's UART IRQ binding below. */
 #if DT_HAS_COMPAT_STATUS_OKAY(zephyr_cdc_acm_uart)
 	usb_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 #else

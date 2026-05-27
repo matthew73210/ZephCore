@@ -493,11 +493,11 @@ if(CONFIG_ZEPHCORE_ROLE_REPEATER)
     helpers/TransportKeyStore.cpp
     helpers/CommonCLI.cpp
   )
-  # USB CDC with 1200 baud touch detection (nRF boards with USB CDC ACM only).
-  # ESP32 boards use usb_serial (no UDC/CDC ACM), so skip custom USB init.
+  # Shared USBD CDC ACM init + 1200-baud DFU + DTR event/callback module.
+  # ESP32 boards use usb_serial (no UDC/CDC ACM), so skip when not present.
   if(NOT CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT AND (CONFIG_USB_CDC_ACM OR CONFIG_USBD_CDC_ACM_CLASS))
     target_sources(app PRIVATE
-      adapters/usb/ZephyrRepeaterUSB.cpp
+      adapters/usb/ZephyrUSBCDC.cpp
     )
   endif()
   target_include_directories(app PRIVATE
@@ -563,11 +563,17 @@ else()
   target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/adapters/transport
   )
-  # USB CDC companion transport (only in debug builds with logging)
+  # USB CDC companion transport (only in debug builds with logging).
+  # Pulls in the shared ZephyrUSBCDC module too (USBD lifecycle + DTR callback).
   if(CONFIG_LOG)
     target_sources(app PRIVATE
       adapters/usb/ZephyrCompanionUSB.cpp
     )
+    if(NOT CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT AND (CONFIG_USB_CDC_ACM OR CONFIG_USBD_CDC_ACM_CLASS))
+      target_sources(app PRIVATE
+        adapters/usb/ZephyrUSBCDC.cpp
+      )
+    endif()
   endif()
   target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/adapters/usb
