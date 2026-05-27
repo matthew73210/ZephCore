@@ -134,9 +134,10 @@ static void usb_rx_work_fn(struct k_work *work)
 					} f;
 					f.len = payload_len;
 					memcpy(f.buf, payload, payload_len);
+					/* sysworkq handles V3-protocol parsing; main only wakes
+					 * if downstream LoRa work gets enqueued (via TX_DRAIN). */
 					if (k_msgq_put(zephcore_ble_get_recv_queue(), &f, K_NO_WAIT) == 0) {
 						k_work_submit(s_rx_work);
-						k_event_post(s_mesh_events, s_mesh_event_ble_rx);
 					}
 				}
 

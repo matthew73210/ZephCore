@@ -77,9 +77,10 @@ extern "C" void bt_ctlr_assert_handle(char *file, uint32_t line)
 #define MESH_EVENT_UI_ACTION     BIT(4)  /* Button action from UI (deferred to mesh thread) */
 #define MESH_EVENT_GPS_ACTION    BIT(5)  /* GPS state change (must run on main thread!) */
 #define MESH_EVENT_TX_DRAIN      BIT(6)  /* Outbound packet delay expired, run checkSend */
+#define MESH_EVENT_PREFS_DIRTY   BIT(8)  /* Prefs mutated off-main; main flushes to flash */
 #define MESH_EVENT_BASE          (MESH_EVENT_LORA_RX | MESH_EVENT_LORA_TX_DONE | \
 	MESH_EVENT_BLE_RX | MESH_EVENT_HOUSEKEEPING | MESH_EVENT_UI_ACTION |  \
-	MESH_EVENT_GPS_ACTION | MESH_EVENT_TX_DRAIN)
+	MESH_EVENT_GPS_ACTION | MESH_EVENT_TX_DRAIN | MESH_EVENT_PREFS_DIRTY)
 #if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
 #define MESH_EVENT_JOYSTICK_LOOP BIT(7)  /* Joystick UI loop tick (50 ms) */
 #define MESH_EVENT_ALL           (MESH_EVENT_BASE | MESH_EVENT_JOYSTICK_LOOP)
@@ -148,9 +149,13 @@ static void ble_on_rx_frame(const uint8_t *data, uint16_t len)
 		return;
 	}
 
-	/* Trigger RX processing and signal mesh event */
+	/* Hand the frame to sysworkq for V3-protocol parsing.  Main thread
+	 * doesn't need a direct wake here: if handleProtocolFrame ends up
+	 * enqueueing an outbound LoRa packet, notifyTxQueued() schedules
+	 * tx_drain_work which posts MESH_EVENT_TX_DRAIN — that's the only
+	 * signal main needs to drive the dispatcher.  BLE-only commands
+	 * (login, time, app-start, …) are handled entirely on sysworkq. */
 	k_work_submit(&rx_process_work);
-	k_event_post(&mesh_events, MESH_EVENT_BLE_RX);
 }
 
 /* BLE TX idle callback — called when TX queue is empty.
@@ -343,6 +348,15 @@ static void mesh_event_loop(void)
 
 			mesh_housekeeping_ui_refresh();
 		}
+
+		/* Off-main pref mutators (e.g. gps_fix_callback in modem_chat
+		 * context) post this bit and update _prefs in memory; we flush
+		 * to flash here so the synchronous LittleFS write doesn't block
+		 * the originating thread.  Multiple posts coalesce into one
+		 * write of the latest _prefs values — desired behaviour. */
+		if (events & MESH_EVENT_PREFS_DIRTY) {
+			data_store.savePrefs(companion_mesh.prefs);
+		}
 #endif
 
 #if IS_ENABLED(CONFIG_ZEPHCORE_UI_DESIGN_JOYSTICK)
@@ -480,8 +494,13 @@ static void gps_fix_callback(double lat, double lon, int64_t utc_time)
 		if (lon_frac < 0) lon_frac = -lon_frac;
 		LOG_INF("GPS fix: position updated lat=%d.%06d lon=%d.%06d",
 			lat_deg, lat_frac, lon_deg, lon_frac);
-		/* Save to storage */
-		data_store.savePrefs(companion_mesh.prefs);
+		/* Defer flash write to main thread — gps_fix_callback runs in
+		 * the GNSS modem_chat worker; a synchronous LittleFS write here
+		 * (10-50 ms on nRF52 QSPI) would block NMEA ingest and risk
+		 * UART buffer overflow / lost fixes.  Main handles the save
+		 * via MESH_EVENT_PREFS_DIRTY; multiple fixes coalesce into one
+		 * write (the latest prefs values are written). */
+		k_event_post(&mesh_events, MESH_EVENT_PREFS_DIRTY);
 	}
 
 	/* Update UI with GPS data */
@@ -777,8 +796,16 @@ int main(void)
 	 * Event sources:
 	 *   - MESH_EVENT_LORA_RX: LoRa packet received (from RX async callback)
 	 *   - MESH_EVENT_LORA_TX_DONE: LoRa TX complete (from TX poll work -> callback)
-	 *   - MESH_EVENT_BLE_RX: BLE frame received (from NUS write)
 	 *   - MESH_EVENT_HOUSEKEEPING: Periodic maintenance (noise floor, etc.)
+	 *   - MESH_EVENT_TX_DRAIN: outbound LoRa packet queued (covers BLE/USB-driven
+	 *     mesh.send paths — sysworkq parses incoming frames and posts this
+	 *     when it actually enqueues something)
+	 *   - MESH_EVENT_UI_ACTION / GPS_ACTION / PREFS_DIRTY: deferred work
+	 *     from non-main threads
+	 *
+	 * BLE/USB RX frames are parsed entirely on sysworkq (rx_process_work) —
+	 * no direct main-thread wake is needed; if the parsed command produces
+	 * outbound LoRa traffic, notifyTxQueued() routes it via TX_DRAIN.
 	 *
 	 * Other processing still uses work queues:
 	 *   - BLE TX: write_frame -> tx_drain_work (event-driven via notify callback)
