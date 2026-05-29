@@ -21,7 +21,6 @@ LOG_MODULE_REGISTER(zephcore_dispatcher, CONFIG_ZEPHCORE_LORA_LOG_LEVEL);
 
 namespace mesh {
 
-#define MAX_RX_DELAY_MILLIS         32000  /* upper bound for score-based RX delay */
 #define MIN_TX_BUDGET_AIRTIME_DIV   2      /* require at least 1/N MTU airtime as budget before TX */
 
 Dispatcher::Dispatcher(Radio &radio, MillisecondClock &ms, PacketManager &mgr)
@@ -103,22 +102,6 @@ bool Dispatcher::isAdminPacket(const Packet *pkt)
 	uint8_t t = pkt->getPayloadType();
 	return t == PAYLOAD_TYPE_REQ || t == PAYLOAD_TYPE_RESPONSE ||
 	       t == PAYLOAD_TYPE_ANON_REQ || t == PAYLOAD_TYPE_CONTROL;
-}
-
-int Dispatcher::calcRxDelay(float score, uint32_t air_time) const
-{
-	/* LUT: 10^(0.85 - i*0.1) - 1, i=0..10; replaces powf() (~1.9KB saved) */
-	static const float lut[11] = {
-		6.0793f, 4.6236f, 3.4674f, 2.5489f, 1.8184f, 1.2389f,
-		0.7783f, 0.4125f, 0.1220f, -0.1089f, -0.2921f
-	};
-	if (score <= 0.0f) return (int)(lut[0] * (float)air_time);
-	if (score >= 1.0f) return (int)(lut[10] * (float)air_time);
-	float idx = score * 10.0f;
-	int i = (int)idx;
-	float frac = idx - (float)i;
-	float val = lut[i] + frac * (lut[i + 1] - lut[i]);
-	return (int)(val * (float)air_time);
 }
 
 uint32_t Dispatcher::getCADFailRetryDelay() const

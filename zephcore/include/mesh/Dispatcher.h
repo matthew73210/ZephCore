@@ -84,7 +84,6 @@ protected:
 	virtual const char *getLogDateTime() { return ""; }
 	virtual uint8_t getDutyCyclePercent() const;
 	static bool isAdminPacket(const Packet *pkt);
-	virtual int calcRxDelay(float score, uint32_t air_time) const;
 	virtual uint32_t getCADFailRetryDelay() const;
 	virtual uint32_t getCADFailMaxDuration() const;
 	virtual int getInterferenceThreshold() const { return 0; }

@@ -598,7 +598,11 @@ uint32_t LoRaRadioBase::getEstAirtimeFor(int len_bytes)
 	float t_sym = (float)(1 << sf) / (bw * 1000.0f);
 	float t_preamble = (preambleLengthForSF(sf) + 4.25f) * t_sym;
 
-	float de = (sf >= 11) ? 1.0f : 0.0f;
+	/* LDRO threshold must track the SX126x driver's should_enable_ldro()
+	 * exactly (symbol time > 16.38 ms) so this estimate's DE matches the
+	 * hardware's DE on every SF/BW pair.  The old `sf >= 11` was only
+	 * correct at BW 125 kHz and diverged on every other bandwidth. */
+	float de = (t_sym > 0.01638f) ? 1.0f : 0.0f;
 	float num = 8.0f * len_bytes - 4.0f * sf + 28.0f + 16.0f;
 	float den = 4.0f * (sf - 2.0f * de);
 	if (den < 1.0f) den = 4.0f;

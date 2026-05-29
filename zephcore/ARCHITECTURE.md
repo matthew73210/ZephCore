@@ -687,7 +687,7 @@ DIO1 interrupt → Zephyr lora driver → async RX callback
     → k_event_post(MESH_EVENT_LORA_RX) → main thread wakes
       → Dispatcher::loop() → checkRecv() → drain ring buffer
         → tryParsePacket() → score + airtime calc
-          → flood: calcRxDelay() → queue inbound or process immediately
+          → flood: dedup + adaptive contention delay → queue for retransmit
           → direct: process immediately
             → Mesh::onRecvPacket() → decrypt → dispatch by type
               → BaseChatMesh::onPeerDataRecv() → onMessageRecv()
