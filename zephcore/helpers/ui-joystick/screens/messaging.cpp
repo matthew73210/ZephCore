@@ -330,9 +330,25 @@ bool UnreadScreen::handleInput(char key)
 			parseMessageOriginAndPath(entry->origin, origin_sender, sizeof(origin_sender),
 					&path_len_origin);
 			if (origin_sender[0] == '#') {
-				/* Channel message: channel name follows '#' in origin_sender */
+				/* Channel message: channel name follows '#' in origin_sender.
+				 * Resolve the channel slot by name — sendComposedMessage()
+				 * routes only by numeric index, so passing -1 here would let
+				 * the user compose and then silently fail to send (F3). */
 				const char *ch_name = origin_sender + 1;
-				_task->setComposeChannel(-1, ch_name);
+				auto *mesh = _task->getMesh();
+				int ch_idx = -1;
+				ChannelDetails ch_lookup;
+				for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+					if (mesh->getChannel(i, ch_lookup) && ch_lookup.name[0] &&
+							strcmp(ch_lookup.name, ch_name) == 0) {
+						ch_idx = i;
+						break;
+					}
+				}
+				/* Unknown channel (e.g. long name truncated in origin[32]) —
+				 * can't reply without a valid slot; swallow the long-press. */
+				if (ch_idx < 0) return true;
+				_task->setComposeChannel(ch_idx, ch_name);
 				char at_buf[38];
 				if (buildChannelReplyPrefix(entry->msg, path_len_origin,
 						at_buf, sizeof(at_buf))) {
