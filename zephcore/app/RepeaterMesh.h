@@ -41,7 +41,7 @@
   #ifdef CONFIG_ZEPHCORE_MAX_NEIGHBOURS
     #define MAX_NEIGHBOURS  CONFIG_ZEPHCORE_MAX_NEIGHBOURS
   #else
-    #define MAX_NEIGHBOURS  16
+    #define MAX_NEIGHBOURS  50
   #endif
 #endif
 

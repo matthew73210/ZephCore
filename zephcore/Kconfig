@@ -146,10 +146,11 @@ config ZEPHCORE_MAX_CLIENTS
 
 config ZEPHCORE_MAX_NEIGHBOURS
 	int "Maximum tracked neighbors"
-	default 16
+	default 50
 	help
 	  Maximum number of neighboring repeaters to track.
 	  Set to 0 to disable neighbor tracking.
+	  Default 50 matches upstream Arduino MeshCore repeater variants.
 
 config ZEPHCORE_MAX_REGION_ENTRIES
 	int "Maximum region entries"
