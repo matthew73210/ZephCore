@@ -28,28 +28,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK) && IS_ENABLED(CONFIG_MQTT_LIB)
-#include "observer_creds.h"
-#include <ZephyrWiFiStation.h>
-#include <ZephyrMQTTPublisher.h>
-#endif
 
 /* Helper to get radio driver for stats — uses LoRaRadioBase (works for SX126x and LR1110) */
 static inline mesh::LoRaRadioBase& getRadioDriver(mesh::Radio* radio) {
     return *static_cast<mesh::LoRaRadioBase*>(radio);
 }
 
-LOG_MODULE_REGISTER(zephcore_repeater, CONFIG_ZEPHCORE_MAIN_LOG_LEVEL);
-
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK) && IS_ENABLED(CONFIG_MQTT_LIB)
-static RoomServerMesh *s_uplink_mesh;
-static void uplink_time_sync_cb(uint32_t unix_ts)
-{
-	if (s_uplink_mesh) {
-		s_uplink_mesh->getRTCClock()->setCurrentTime(unix_ts);
-	}
-}
-#endif
+LOG_MODULE_REGISTER(zephcore_room, CONFIG_ZEPHCORE_MAIN_LOG_LEVEL);
 
 /* Protocol constants */
 #define FIRMWARE_VER_LEVEL       2
@@ -61,10 +46,6 @@ static void uplink_time_sync_cb(uint32_t unix_ts)
 #define REQ_TYPE_GET_OWNER_INFO     0x07
 
 #define RESP_SERVER_LOGIN_OK        0
-
-#define ANON_REQ_TYPE_REGIONS      0x01
-#define ANON_REQ_TYPE_OWNER        0x02
-#define ANON_REQ_TYPE_BASIC        0x03
 
 #define CLI_REPLY_DELAY_MILLIS      600
 #define LAZY_CONTACTS_WRITE_DELAY   5000
@@ -393,13 +374,8 @@ void RoomServerMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int le
 #endif
     (void)snr;
     (void)rssi;
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK) && IS_ENABLED(CONFIG_MQTT_LIB)
-    _uplink_last_rssi = rssi;
-    _uplink_last_raw_len = len <= (int)sizeof(_uplink_last_raw) ? len : (int)sizeof(_uplink_last_raw);
-    if (_uplink_last_raw_len > 0) {
-        memcpy(_uplink_last_raw, raw, _uplink_last_raw_len);
-    }
-#endif
+    (void)raw;
+    (void)len;
 }
 
 void RoomServerMesh::logRx(mesh::Packet* pkt, int len, float score) {
@@ -408,10 +384,7 @@ void RoomServerMesh::logRx(mesh::Packet* pkt, int len, float score) {
                 len, pkt->getPayloadType(), pkt->isRouteDirect() ? "D" : "F",
                 pkt->payload_len, (int)_radio->getLastSNR(), (int)_radio->getLastRSSI());
     }
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK) && IS_ENABLED(CONFIG_MQTT_LIB)
-    _uplink_last_score = score;
-    publishUplinkPacket(pkt);
-#endif
+    (void)score;
 }
 
 void RoomServerMesh::logTx(mesh::Packet* pkt, int len) {
@@ -775,24 +748,12 @@ RoomServerMesh::RoomServerMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh:
     for (int i = 0; i < MAX_UNSYNCED_POSTS; i++) {
         posts[i].clear();
     }
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK) && IS_ENABLED(CONFIG_MQTT_LIB)
-    memset(&_uplink_creds, 0, sizeof(_uplink_creds));
-    observer_creds_init(&_uplink_creds);
-    _uplink_reboot_required = false;
-    memset(_uplink_pubkey_hex, 0, sizeof(_uplink_pubkey_hex));
-    memset(_uplink_packets_topic, 0, sizeof(_uplink_packets_topic));
-    memset(_uplink_status_topic, 0, sizeof(_uplink_status_topic));
-    _uplink_last_score = 0.0f;
-    _uplink_last_rssi = 0.0f;
-    _uplink_last_raw_len = 0;
-    _uplink_next_status_at = 0;
-#endif
 }
 
 void RoomServerMesh::begin(RepeaterDataStore* store) {
     _store = store;
 
-    /* Prefs and identity are loaded by the caller (main_repeater.cpp) before
+    /* Prefs and identity are loaded by the caller (main_room_server.cpp) before
      * begin() — the radio reads freq/bw/sf/cr through _prefs during
      * Mesh::begin() → Dispatcher::begin() → Radio::begin(). */
     mesh::Mesh::begin();
@@ -814,7 +775,7 @@ void RoomServerMesh::begin(RepeaterDataStore* store) {
     }
 
     /* NOTE: Radio configuration is handled by SX126xRadio adapter using
-     * LoRaConfig defaults. The repeater uses the same radio params as companion.
+     * LoRaConfig defaults. The room server uses the same radio params as companion.
      * Dynamic radio reconfiguration (via CLI) is not yet supported - radio
      * uses compile-time defaults from LoRaConfig. This avoids EBUSY errors
      * from trying to reconfigure while radio is in async RX mode. */
@@ -826,33 +787,6 @@ void RoomServerMesh::begin(RepeaterDataStore* store) {
 
     LOG_INF("RoomServerMesh started: %s (freq=%.2f bw=%.0f sf=%d cr=%d)",
             _prefs.node_name, (double)_prefs.freq, (double)_prefs.bw, _prefs.sf, _prefs.cr);
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK) && IS_ENABLED(CONFIG_MQTT_LIB)
-    observer_creds_load(&_uplink_creds, _store->getBasePath());
-    mesh::Utils::toHex(_uplink_pubkey_hex, self_id.pub_key, PUB_KEY_SIZE);
-    _uplink_pubkey_hex[PUB_KEY_SIZE * 2] = '\0';
-
-    const char *iata = _uplink_creds.mqtt_iata[0] ? _uplink_creds.mqtt_iata : "XXX";
-    snprintf(_uplink_packets_topic, sizeof(_uplink_packets_topic),
-             "meshcore/%s/%s/packets", iata, _uplink_pubkey_hex);
-    snprintf(_uplink_status_topic, sizeof(_uplink_status_topic),
-             "meshcore/%s/%s/status", iata, _uplink_pubkey_hex);
-
-    if (isUplinkEnabled() && _uplink_creds.wifi_ssid[0] && _uplink_creds.mqtt_host[0]) {
-        s_uplink_mesh = this;
-        zc_wifi_station_start(&_uplink_creds, uplink_time_sync_cb);
-        mqtt_publisher_start(&_uplink_creds, _prefs.node_name,
-                             _uplink_status_topic, _uplink_packets_topic);
-        mqtt_publisher_set_connect_cb([]() {
-            if (s_uplink_mesh) {
-                s_uplink_mesh->publishUplinkStatus("online");
-            }
-        });
-        _uplink_next_status_at = futureMillis(300000);
-        LOG_INF("Repeater uplink active: %s", _uplink_packets_topic);
-    } else {
-        LOG_INF("Repeater uplink inactive");
-    }
-#endif
 }
 
 double RoomServerMesh::getNodeLat() const {
@@ -1043,12 +977,6 @@ void RoomServerMesh::handleCommand(uint32_t sender_timestamp, char* command, cha
         command += 3;
     }
 
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK) && IS_ENABLED(CONFIG_MQTT_LIB)
-    if (handleUplinkCommand(command, reply)) {
-        return;
-    }
-#endif
-
     // ACL commands - supports BOTH formats for app compatibility:
     //   Old Arduino: setperm {pubkey-hex} {permissions}   (pubkey is long, perms is short)
     //   MeshCore App: setperm {permissions} {pubkey-hex}  (perms is short 2-char hex, pubkey is long)
@@ -1107,11 +1035,6 @@ void RoomServerMesh::handleCommand(uint32_t sender_timestamp, char* command, cha
         _cli.handleCommand(sender_timestamp, command, reply);
     }
 }
-
-/* MQTT uplink methods (saveUplinkCreds / handleUplinkCommand /
- * publishUplinkPacket / publishUplinkStatus) live in app/RepeaterUplink.cpp,
- * compiled only when CONFIG_ZEPHCORE_REPEATER_UPLINK && CONFIG_MQTT_LIB.
- * The uplink init (WiFi/MQTT start + topic strings) stays in begin() above. */
 
 void RoomServerMesh::loop() {
     mesh::Mesh::loop();
@@ -1176,13 +1099,6 @@ void RoomServerMesh::loop() {
         acl.save(_store->getAclPath(), RoomServerMesh::saveFilter);
         dirty_contacts_expiry = 0;
     }
-
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK) && IS_ENABLED(CONFIG_MQTT_LIB)
-    if (_uplink_next_status_at && millisHasNowPassed(_uplink_next_status_at)) {
-        publishUplinkStatus("online");
-        _uplink_next_status_at = futureMillis(300000);
-    }
-#endif
 
     uint32_t now = k_uptime_get();
     uptime_millis += now - last_millis;

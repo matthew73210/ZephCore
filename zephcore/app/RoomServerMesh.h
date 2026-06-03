@@ -25,9 +25,6 @@
 #include <helpers/StatsFormatHelper.h>
 #include <helpers/NodePrefs.h>
 #include "RepeaterDataStore.h"
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK)
-#include "observer_creds.h"
-#endif
 
 #ifndef FIRMWARE_VERSION
   #define FIRMWARE_VERSION   "v1.15.5-zephyr"
@@ -75,8 +72,6 @@ class RoomServerMesh : public mesh::Mesh, public CommonCLICallbacks {
     ClientACL acl;
     CommonCLI _cli;
     uint8_t reply_data[MAX_PACKET_PAYLOAD];
-    uint8_t reply_path[MAX_PATH_SIZE];
-    uint8_t reply_path_len;
     TransportKeyStore key_store;
     RegionMap region_map, temp_map;
     RegionEntry* load_stack[8];
@@ -97,18 +92,6 @@ class RoomServerMesh : public mesh::Mesh, public CommonCLICallbacks {
     uint8_t pending_sf;
     uint8_t pending_cr;
     int matching_peer_indexes[MAX_CLIENTS];
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK)
-    ObserverCreds _uplink_creds;
-    bool _uplink_reboot_required;
-    char _uplink_pubkey_hex[PUB_KEY_SIZE * 2 + 1];
-    char _uplink_packets_topic[160];
-    char _uplink_status_topic[160];
-    float _uplink_last_score;
-    float _uplink_last_rssi;
-    uint8_t _uplink_last_raw[MAX_TRANS_UNIT];
-    int _uplink_last_raw_len;
-    unsigned long _uplink_next_status_at;
-#endif
 
     int handleRequest(ClientInfo* sender, uint32_t sender_timestamp, uint8_t* payload, size_t payload_len);
     mesh::Packet* createSelfAdvert();
@@ -166,21 +149,6 @@ protected:
     void onPeerDataRecv(mesh::Packet* packet, uint8_t type, int sender_idx, const uint8_t* secret, uint8_t* data, size_t len) override;
     bool onPeerPathRecv(mesh::Packet* packet, int sender_idx, const uint8_t* secret, uint8_t* path, uint8_t path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len) override;
     void onAckRecv(mesh::Packet* packet, uint32_t ack_crc) override;
-#if IS_ENABLED(CONFIG_ZEPHCORE_REPEATER_UPLINK)
-    bool handleUplinkCommand(const char *command, char *reply);
-    void markUplinkRebootRequired() { _uplink_reboot_required = true; }
-    bool isUplinkEnabled() const { return (_uplink_creds._reserved[0] & 0x01) != 0; }
-    void setUplinkEnabled(bool en) {
-        if (en) {
-            _uplink_creds._reserved[0] |= 0x01;
-        } else {
-            _uplink_creds._reserved[0] &= (uint8_t)~0x01;
-        }
-    }
-    bool saveUplinkCreds();
-    void publishUplinkPacket(mesh::Packet *pkt);
-    void publishUplinkStatus(const char *status);
-#endif
 
 public:
     RoomServerMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::MillisecondClock& ms,
