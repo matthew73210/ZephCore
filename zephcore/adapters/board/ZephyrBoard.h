@@ -12,6 +12,7 @@ namespace mesh {
 class ZephyrBoard : public MainBoard {
 public:
 	uint16_t getBattMilliVolts() override;
+	uint8_t  getBattPercent() override;
 	float getMCUTemperature() override;
 	bool setAdcMultiplier(float multiplier) override;
 	float getAdcMultiplier() const override;

@@ -138,7 +138,7 @@
 	 * applied to 12-bit average with default ref (GAIN_1_6 + 0.6V internal = 3.6V FS). */
 	zephyr,user {
 		io-channels = <&adc 3>;
-		vbat-mv-multiplier = <6161>;
+		vbat-mv-multiplier = <6259>;  /* 1.73:1 divider, 3.6V ref; corrected from Arduino 3.0V AREF + nRF SAADC gain */
 	};
 
 	/* ---- Buzzer on PWM0 ---- */

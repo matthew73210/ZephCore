@@ -182,7 +182,7 @@
 		 * voltage divider ratio = 4.9 (ADC_MULTIPLIER from variant.h).
 		 * multiplier = 3600 * 4.9 = 17640
 		 */
-		vbat-mv-multiplier = <17640>;
+		vbat-mv-multiplier = <17728>;  /* 4.9:1 divider, 3.6V ref; +0.5% for nRF SAADC gain error */
 	};
 
 	aliases {

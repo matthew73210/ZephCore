@@ -77,7 +77,7 @@
 	/* Battery ADC: P0.31 (AIN7), 150K+150K voltage divider (2:1) */
 	zephyr,user {
 		io-channels = <&adc 7>;
-		vbat-mv-multiplier = <7200>;
+		vbat-mv-multiplier = <7236>;  /* 2:1 divider, 3.6V ref; +0.5% for nRF SAADC gain error */
 	};
 };
 

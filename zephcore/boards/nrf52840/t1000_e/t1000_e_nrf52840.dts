@@ -102,7 +102,7 @@
 	/* Battery ADC channel reference for ZephyrBoard */
 	zephyr,user {
 		io-channels = <&adc 0>;
-		vbat-mv-multiplier = <7200>;  /* 2:1 voltage divider, 3.6V ref */
+		vbat-mv-multiplier = <7236>;  /* 2:1 divider, 3.6V ref; +0.5% for nRF SAADC gain error */
 	};
 
 	/* Buzzer on PWM0 channel 0 (P0.25) with enable on P1.05 */

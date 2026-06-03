@@ -4,6 +4,7 @@
  */
 
 #include "CommonCLI.h"
+#include "battery_curve.h"
 #include <helpers/TxtDataHelpers.h>
 #include <helpers/AdvertDataHelpers.h>
 #include <adapters/board/ZephyrBoard.h>
@@ -507,7 +508,14 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
             if (adc_mult == 0.0f) {
                 strcpy(reply, "Error: unsupported by this board");
             } else {
-                snprintf(reply, CLI_REPLY_SIZE, "> %.3f", (double)adc_mult);
+                uint16_t mv = _board->getBattMilliVolts();
+                uint16_t target_mv = battery_curve_default.ocv_mv[0];
+                if (mv > 0) {
+                    snprintf(reply, CLI_REPLY_SIZE, "> %.3f  (%u mV, target >= %u mV for 100%%)",
+                             (double)adc_mult, mv, target_mv);
+                } else {
+                    snprintf(reply, CLI_REPLY_SIZE, "> %.3f  (no ADC reading)", (double)adc_mult);
+                }
             }
         } else if (memcmp(config, "rxduty", 6) == 0) {
             snprintf(reply, CLI_REPLY_SIZE, "> %d", (int)_prefs->rx_duty_cycle);

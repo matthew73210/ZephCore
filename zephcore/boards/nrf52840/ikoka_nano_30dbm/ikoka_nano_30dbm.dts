@@ -72,7 +72,7 @@
 	/* Battery ADC channel */
 	zephyr,user {
 		io-channels = <&adc 7>;
-		vbat-mv-multiplier = <10650>;  /* 1M/510k divider (2.96x), 3.6V ref */
+		vbat-mv-multiplier = <10709>;  /* 2.96:1 divider, 3.6V ref; +0.5% for nRF SAADC gain error */
 	};
 };
 

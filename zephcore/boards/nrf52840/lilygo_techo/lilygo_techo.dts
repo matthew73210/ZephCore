@@ -190,7 +190,7 @@
 	 * with ADC_REF_INTERNAL (0.6V) × gain 1/6 × divider 2.0. */
 	zephyr,user {
 		io-channels = <&adc 2>;
-		vbat-mv-multiplier = <7200>;
+		vbat-mv-multiplier = <7236>;  /* 2:1 divider, 3.6V ref; +0.5% for nRF SAADC gain error */
 	};
 
 	/* ---- E-Paper display (MIPI DBI SPI) ----

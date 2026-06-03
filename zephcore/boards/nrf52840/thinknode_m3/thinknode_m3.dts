@@ -96,7 +96,7 @@
 	 * With GAIN_1_6 + internal ref (3600mV full scale) × 2 = 7200 multiplier. */
 	zephyr,user {
 		io-channels = <&adc 3>;
-		vbat-mv-multiplier = <7200>;
+		vbat-mv-multiplier = <7236>;  /* 2:1 divider, 3.6V ref; +0.5% for nRF SAADC gain error */
 	};
 
 	/* Buzzer on PWM0 channel 0 (P0.23, PIN_BUZZER=23) */

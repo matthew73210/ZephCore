@@ -146,7 +146,7 @@
 	/* Battery sense: AIN3 = P0.05 with the GAT562 divider (~1.73x) */
 	zephyr,user {
 		io-channels = <&adc 3>;
-		vbat-mv-multiplier = <6232>;	/* mv = raw * multiplier / 4096 */
+		vbat-mv-multiplier = <6259>;	/* 1.73:1 divider, 3.6V ref; corrected from Arduino 3.0V AREF + nRF SAADC gain */
 	};
 };
 

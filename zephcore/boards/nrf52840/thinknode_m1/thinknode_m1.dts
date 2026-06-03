@@ -151,7 +151,7 @@
 	/* 150K+150K voltage divider (2:1) on AIN2 (P0.04) */
 	zephyr,user {
 		io-channels = <&adc 2>;
-		vbat-mv-multiplier = <7200>;
+		vbat-mv-multiplier = <7236>;  /* 2:1 divider, 3.6V ref; +0.5% for nRF SAADC gain error */
 	};
 
 	/* ---- Buzzer on PWM0 ---- */

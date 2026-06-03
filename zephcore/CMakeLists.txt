@@ -436,6 +436,21 @@ target_sources(app PRIVATE
   helpers/fatal_reboot.c
 )
 
+# ========== Battery Curve Selection ==========
+# Board-specific battery_curve.c wins over the generic default.
+# To add a curve for a board, create boards/<platform>/<board>/battery_curve.c
+# without __weak — the linker prefers the non-weak generic only as a fallback.
+file(GLOB_RECURSE _BOARD_BATTERY_CURVE
+     "${CMAKE_CURRENT_SOURCE_DIR}/boards/*/${BOARD_BASE}/battery_curve.c")
+if(_BOARD_BATTERY_CURVE)
+  list(GET _BOARD_BATTERY_CURVE 0 _BOARD_BATTERY_CURVE)
+  message(STATUS "ZephCore Battery: board-specific curve (${_BOARD_BATTERY_CURVE})")
+  target_sources(app PRIVATE "${_BOARD_BATTERY_CURVE}")
+else()
+  message(STATUS "ZephCore Battery: generic LiPo curve")
+  target_sources(app PRIVATE helpers/battery_curve.c)
+endif()
+
 # Native-Linux (native_sim) runtime setup: force real-time clock mode so the
 # simulated clock tracks wall time (required for the real SX126x radio's
 # BUSY/DIO1 timing).  Bakes in the equivalent of the --rt command-line flag.

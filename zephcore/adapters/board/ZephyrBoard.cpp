@@ -3,6 +3,7 @@
  */
 
 #include "ZephyrBoard.h"
+#include "battery_curve.h"
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/drivers/sensor.h>
@@ -144,6 +145,11 @@ uint16_t ZephyrBoard::getBattMilliVolts()
 #else
 	return 0;
 #endif
+}
+
+uint8_t ZephyrBoard::getBattPercent()
+{
+	return battery_curve_lookup(&battery_curve_default, getBattMilliVolts());
 }
 
 bool ZephyrBoard::setAdcMultiplier(float multiplier)

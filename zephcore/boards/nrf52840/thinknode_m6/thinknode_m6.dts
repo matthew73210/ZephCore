@@ -94,7 +94,7 @@
 	 * With GAIN_1_6 + internal ref (3600mV full scale) × 1.75 = 6300 multiplier. */
 	zephyr,user {
 		io-channels = <&adc 4>;
-		vbat-mv-multiplier = <6300>;
+		vbat-mv-multiplier = <6332>;  /* 1.75:1 divider, 3.6V ref; +0.5% for nRF SAADC gain error */
 	};
 
 	/* Board power enable (PIN_PWR_EN = P0.27) — must be HIGH for peripherals */
