@@ -71,6 +71,27 @@ void zephcore_usb_companion_set_session_start_cb(void (*cb)(void));
  */
 void zephcore_usb_companion_set_session_end_cb(void (*cb)(void));
 
+/**
+ * Register a callback fired when a complete text CLI line arrives over USB.
+ * Activated when the first byte of a session is not the V3 sync byte ('<').
+ * The line is null-terminated and has any trailing CR/LF stripped. May be NULL.
+ */
+void zephcore_usb_companion_set_cli_line_cb(void (*cb)(const char *line));
+
+/**
+ * Write a raw text reply to the USB CDC port (no V3 framing).
+ * Used to send CLI responses when in text mode.
+ */
+void zephcore_usb_companion_write_text(const char *text, size_t len);
+
+/**
+ * True when the active USB session was opened by the text CLI rather than a
+ * binary V3 companion app. Main uses this to suppress binary frame/push output
+ * to USB so the serial console only ever receives text. False when no USB
+ * session or when a binary companion owns the interface.
+ */
+bool zephcore_usb_companion_is_text_session(void);
+
 #ifdef __cplusplus
 }
 #endif

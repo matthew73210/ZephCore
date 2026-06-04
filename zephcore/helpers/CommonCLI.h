@@ -35,13 +35,15 @@ public:
     virtual void eraseLogFile() = 0;
     virtual void dumpLogFile() = 0;
     virtual void setTxPower(int8_t power_dbm) = 0;
-    virtual void formatNeighborsReply(char* reply) = 0;
+    /* Repeater-specific — default replies keep companion builds clean.
+     * Repeater overrides all four; companions get "not available". */
+    virtual void formatNeighborsReply(char* reply)      { strcpy(reply, "not available"); }
     virtual void removeNeighbor(const uint8_t* pubkey, int key_len) {
-        // no-op by default
+        (void)pubkey; (void)key_len;
     }
-    virtual void formatStatsReply(char* reply) = 0;
-    virtual void formatRadioStatsReply(char* reply) = 0;
-    virtual void formatPacketStatsReply(char* reply) = 0;
+    virtual void formatStatsReply(char* reply)           { strcpy(reply, "not available"); }
+    virtual void formatRadioStatsReply(char* reply)      { strcpy(reply, "not available"); }
+    virtual void formatPacketStatsReply(char* reply)     { strcpy(reply, "not available"); }
     virtual mesh::LocalIdentity& getSelfId() = 0;
     virtual void saveIdentity(const mesh::LocalIdentity& new_id) = 0;
     virtual void clearStats() = 0;

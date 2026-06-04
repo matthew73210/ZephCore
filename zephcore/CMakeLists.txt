@@ -640,6 +640,7 @@ else()
   if(CONFIG_LOG OR CONFIG_ZEPHCORE_COMPANION_USB)
     target_sources(app PRIVATE
       adapters/usb/ZephyrCompanionUSB.cpp
+      helpers/CommonCLI.cpp  # backs the USB-only text CLI dispatch
     )
     if(NOT CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT AND (CONFIG_USB_CDC_ACM OR CONFIG_USBD_CDC_ACM_CLASS))
       target_sources(app PRIVATE

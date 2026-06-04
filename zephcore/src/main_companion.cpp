@@ -54,6 +54,9 @@ LOG_MODULE_REGISTER(zephcore_main, CONFIG_ZEPHCORE_MAIN_LOG_LEVEL);
 #include <mesh/RadioIncludes.h>
 #ifdef ZEPHCORE_LORA
 #include <app/CompanionMesh.h>
+#include <helpers/CommonCLI.h>
+#include <helpers/ClientACL.h>
+#include <helpers/battery_curve.h>
 #endif
 
 /*
@@ -253,6 +256,12 @@ static size_t write_frame(const uint8_t *src, size_t len)
 	 * send queue is never drained while USB is active (tx_drain no-ops on
 	 * IFACE_USB), so routing through zephcore_ble_send would strand the frame. */
 	if (zephcore_ble_get_active_iface() == ZEPHCORE_IFACE_USB) {
+		/* A text-CLI session owns USB — swallow binary V3 output so the serial
+		 * console never sees framed garbage. Report success so callers don't
+		 * retry/back off on a frame we intentionally dropped. */
+		if (zephcore_usb_companion_is_text_session()) {
+			return len;
+		}
 		return zephcore_usb_companion_write_frame(src, len);
 	}
 #endif
@@ -271,8 +280,10 @@ static void push_callback(uint8_t code, const uint8_t *data, size_t len)
 	 * dropped on a USB-attached client. */
 	bool transport_up = zephcore_ble_is_connected();
 #if ZEPHCORE_USB_STACK
+	/* A text-CLI session is not a binary companion — don't push V3 frames to it. */
 	transport_up = transport_up ||
-		(zephcore_ble_get_active_iface() == ZEPHCORE_IFACE_USB);
+		(zephcore_ble_get_active_iface() == ZEPHCORE_IFACE_USB &&
+		 !zephcore_usb_companion_is_text_session());
 #endif
 	if (!transport_up) return;
 
@@ -552,6 +563,81 @@ static void save_prefs_to_flash(void)
 {
 	data_store.savePrefs(companion_mesh_ptr->prefs);
 }
+
+/* ========== Companion CLI (USB text sideband only) ==========
+ * Text CLI lives on USB CDC only: its '<' sync byte cleanly separates binary
+ * V3 frames from text, whereas BLE NUS frames have no prefix and V3 opcodes
+ * overlap printable ASCII, so a BLE text sideband can't be disambiguated. */
+#if ZEPHCORE_USB_STACK
+
+class CompanionCLICallbacks : public CommonCLICallbacks {
+public:
+	void savePrefs() override {
+		data_store.savePrefs(companion_mesh.prefs);
+	}
+	const char* getFirmwareVer() override { return "v1.15.6-zephyr"; }
+	const char* getBuildDate() override { return FIRMWARE_BUILD_DATE; }
+	const char* getRole() override { return "companion"; }
+	bool formatFileSystem() override { return data_store.formatFileSystem(); }
+
+	/* Advert / timer controls — mesh-internal; stub for now. */
+	void sendSelfAdvertisement(int delay_millis, bool flood) override {
+		(void)delay_millis; (void)flood;
+	}
+	void updateAdvertTimer() override {}
+	void updateFloodAdvertTimer() override {}
+
+	/* Log control — no log file on companion. */
+	void setLoggingOn(bool enable) override { (void)enable; }
+	void eraseLogFile() override {}
+	void dumpLogFile() override {}
+
+	/* TX power — Zephyr LoRa driver has no runtime API; log only (matches repeater). */
+	void setTxPower(int8_t power_dbm) override {
+		LOG_INF("TX power %d dBm requested (reboot to apply)", power_dbm);
+	}
+
+	mesh::LocalIdentity& getSelfId() override { return companion_mesh.self_id; }
+
+	void saveIdentity(const mesh::LocalIdentity& new_id) override {
+		companion_mesh.self_id = new_id;
+		data_store.saveMainIdentity(new_id);
+	}
+
+	void clearStats() override {
+		lora_radio.resetStats();
+		companion_mesh.resetStats();
+	}
+
+	/* Temp radio params — deferred; stub for now. */
+	void applyTempRadioParams(float freq, float bw, uint8_t sf, uint8_t cr,
+				  int timeout_mins) override {
+		(void)freq; (void)bw; (void)sf; (void)cr; (void)timeout_mins;
+	}
+};
+
+static CompanionCLICallbacks companion_cli_cbs;
+static ClientACL companion_acl;  /* unused by CommonCLI but required by constructor */
+static CommonCLI companion_cli(zephyr_board, rtc_clock, companion_acl,
+			       &companion_mesh.prefs, &companion_cli_cbs);
+
+/* Dispatch a CLI text line from USB, reply back over USB CDC. Output mirrors
+ * the repeater's serial CLI ("\r\n  -> <reply>\r\n", CRLF) so the
+ * flasher.meshcore.io serial console renders companion replies identically. */
+static void companion_cli_dispatch(const char *line)
+{
+	char reply[CLI_REPLY_SIZE];
+	reply[0] = '\0';
+	companion_cli.handleCommand(0, line, reply);
+	if (reply[0] != '\0') {
+		zephcore_usb_companion_write_text("\r\n  -> ", 7);
+		zephcore_usb_companion_write_text(reply, strlen(reply));
+	}
+	zephcore_usb_companion_write_text("\r\n", 2);
+}
+
+#endif  /* ZEPHCORE_USB_STACK */
+
 #endif
 
 /* GPS enable callback - logs state changes
@@ -879,6 +965,8 @@ int main(void)
 	zephcore_usb_companion_set_session_end_cb(usb_on_session_end);
 	/* Resume the contact pump when the USB TX ring drains (≈ BLE on_tx_idle). */
 	zephcore_usb_companion_set_tx_drain_cb(usb_on_tx_drain);
+	/* Text CLI sideband — activates when first byte is not '<'. */
+	zephcore_usb_companion_set_cli_line_cb(companion_cli_dispatch);
 #endif
 
 #if IS_ENABLED(CONFIG_BT)
