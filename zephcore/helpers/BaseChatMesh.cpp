@@ -84,7 +84,8 @@ void BaseChatMesh::bootstrapRTCfromContacts()
 
 ContactInfo *BaseChatMesh::allocateContactSlot(bool transient_only)
 {
-	if (num_contacts < MAX_CONTACTS) {
+	int max_slots = transient_only ? (MAX_CONTACTS + MAX_ANON_CONTACTS) : MAX_CONTACTS;
+	if (num_contacts < max_slots) {
 		return &contacts[num_contacts++];
 	} else if (transient_only || shouldOverwriteWhenFull()) {
 		int oldest_idx = -1;
