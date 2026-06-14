@@ -272,6 +272,27 @@ void CompanionMesh::sendFloodScoped(const mesh::GroupChannel &channel, mesh::Pac
 	sendFloodScopedDefault(pkt, delay_millis);
 }
 
+bool CompanionMesh::sendSelfAdvert(bool flood)
+{
+	mesh::Packet *adv;
+	if (prefs.advert_loc_policy == 0) {  /* ADVERT_LOC_NONE */
+		adv = createSelfAdvert(prefs.node_name);
+	} else {
+		adv = createSelfAdvert(prefs.node_name, prefs.node_lat, prefs.node_lon);
+	}
+	if (!adv) {
+		return false;
+	}
+	if (flood) {
+		TransportKey default_scope;
+		memcpy(default_scope.key, prefs.default_scope_key, sizeof(default_scope.key));
+		sendFloodScoped(default_scope, adv, (uint32_t)0);
+	} else {
+		sendZeroHop(adv);
+	}
+	return true;
+}
+
 bool CompanionMesh::onContactPathRecv(ContactInfo &from, uint8_t *in_path, uint8_t in_path_len,
 	uint8_t *out_path, uint8_t out_path_len, uint8_t extra_type, uint8_t *extra, uint8_t extra_len)
 {
@@ -2040,21 +2061,9 @@ bool CompanionMesh::handleProtocolFrame(const uint8_t *data, size_t len)
 		}
 
 	case CMD_SEND_SELF_ADVERT: {
-		mesh::Packet *adv;
-		if (prefs.advert_loc_policy == 0) {  /* ADVERT_LOC_NONE */
-			adv = createSelfAdvert(prefs.node_name);
-		} else {
-			adv = createSelfAdvert(prefs.node_name, prefs.node_lat, prefs.node_lon);
-		}
-		if (adv) {
-			/* Optional param: data[1] == 1 means flood, else zero-hop */
-			if (len >= 2 && data[1] == 1) {
-				TransportKey default_scope;
-				memcpy(default_scope.key, prefs.default_scope_key, sizeof(default_scope.key));
-				sendFloodScoped(default_scope, adv, (uint32_t)0);
-			} else {
-				sendZeroHop(adv);
-			}
+		/* Optional param: data[1] == 1 means flood, else zero-hop */
+		bool flood = (len >= 2 && data[1] == 1);
+		if (sendSelfAdvert(flood)) {
 			sendPacketOk();
 		} else {
 			sendPacketError(ERR_TABLE_FULL);

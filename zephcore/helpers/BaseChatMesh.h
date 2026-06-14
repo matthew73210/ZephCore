@@ -178,6 +178,14 @@ protected:
 public:
 	mesh::Packet *createSelfAdvert(const char *name);
 	mesh::Packet *createSelfAdvert(const char *name, double lat, double lon);
+
+	/* Build and send a self advert honoring the node's location policy,
+	 * path-hash mode, and transport scope. Overridden by CompanionMesh
+	 * (the only mesh with interactive advert UI triggers); the base default
+	 * does nothing and returns false. Lets UI screens that only hold a
+	 * BaseChatMesh* trigger adverts via the canonical scoped path instead
+	 * of a bare sendFlood() that drops path_hash_mode and scope. */
+	virtual bool sendSelfAdvert(bool flood) { (void)flood; return false; }
 	int sendMessage(const ContactInfo &recipient, uint32_t timestamp, uint8_t attempt, const char *text,
 		uint32_t &expected_ack, uint32_t &est_timeout);
 	int sendCommandData(const ContactInfo &recipient, uint32_t timestamp, uint8_t attempt, const char *text,

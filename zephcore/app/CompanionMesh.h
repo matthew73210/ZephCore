@@ -110,6 +110,18 @@ public:
 	int getOfflineQueueCount() const { return _offline_queue_count; }
 
 	/**
+	 * Build and send a self advert using the configured location policy,
+	 * path-hash mode, and default transport scope. This is the canonical
+	 * path shared by the BLE/USB CMD_SEND_SELF_ADVERT handler and the UI
+	 * (button / joystick) advert actions, so flood adverts always honor
+	 * prefs.path_hash_mode and the region scope regardless of trigger.
+	 *
+	 * @param flood  true for a flood advert, false for zero-hop.
+	 * @return false if the packet pool was full (advert not sent).
+	 */
+	bool sendSelfAdvert(bool flood) override;
+
+	/**
 	 * Handle a protocol frame from BLE.
 	 * Returns true if frame was handled.
 	 */

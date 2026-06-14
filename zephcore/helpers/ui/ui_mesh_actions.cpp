@@ -215,24 +215,12 @@ extern "C" void mesh_handle_ui_actions(void)
 
 	if (actions & (UI_ACTION_FLOOD_ADVERT | UI_ACTION_ZEROHOP_ADVERT)) {
 		bool flood = !!(actions & UI_ACTION_FLOOD_ADVERT);
-		mesh::Packet *adv;
-		if (s_mesh->prefs.advert_loc_policy == 0) {
-			adv = s_mesh->createSelfAdvert(
-				s_mesh->prefs.node_name);
-		} else {
-			adv = s_mesh->createSelfAdvert(
-				s_mesh->prefs.node_name,
-				s_mesh->prefs.node_lat,
-				s_mesh->prefs.node_lon);
-		}
-		if (adv) {
-			if (flood) {
-				s_mesh->sendFlood(adv);
-				LOG_INF("flood advert sent (button)");
-			} else {
-				s_mesh->sendZeroHop(adv);
-				LOG_INF("zero-hop advert sent (button)");
-			}
+		/* Route through the shared canonical path so flood adverts honor
+		 * prefs.path_hash_mode and the default transport scope, matching
+		 * the mobile-app CMD_SEND_SELF_ADVERT behavior. */
+		if (s_mesh->sendSelfAdvert(flood)) {
+			LOG_INF("%s advert sent (button)",
+				flood ? "flood" : "zero-hop");
 		}
 	}
 

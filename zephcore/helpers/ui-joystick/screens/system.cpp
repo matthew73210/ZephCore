@@ -605,9 +605,10 @@ bool AdvertScreen::handleInput(char key)
 			return true;
 		}
 		if (_selected == ADVERT_ITEM_SEND_FLOOD) {
-			mesh::Packet *pkt = mesh->createSelfAdvert(node_name);
-			if (pkt) { mesh->sendFlood(pkt); _task->showAlert("Advert flood sent", 1000); }
-			else     { _task->showAlert("Advert failed", 1000); }
+			/* Canonical scoped path: honors prefs.path_hash_mode and the
+			 * default transport scope (a bare sendFlood() would drop both). */
+			if (mesh->sendSelfAdvert(true)) { _task->showAlert("Advert flood sent", 1000); }
+			else                            { _task->showAlert("Advert failed", 1000); }
 			return true;
 		}
 
