@@ -324,10 +324,12 @@ endif()
 # Requires --sysbuild to build MCUboot alongside the app.
 # Non-ESP32 builds and companion builds are unaffected.
 #
-# Excluded on the classic ESP32 (e.g. T-Beam, board qualifier ".../esp32/..."):
-# its DRAM cannot fit the mesh stack alongside WiFi + MCUboot, so it uses the
-# simple-boot path and a CLI-only repeater (no WiFi OTA). The ESP32-S3/C-series
-# (esp32s3/esp32c*) keep WiFi OTA.
+# Excluded on the classic ESP32 (e.g. T-Beam, board qualifier ".../esp32/...").
+# It builds, but only because the WiFi DT node would be left disabled; with WiFi
+# actually functional, the driver buffers + 64KB OTA heap overflow the classic
+# ESP32's DRAM by ~10KB. Rather than trim WiFi/heap to an unverifiable margin,
+# the classic ESP32 repeater stays CLI-only on simple boot (handled in build.sh).
+# The ESP32-S3/C-series have the DRAM headroom and keep WiFi OTA.
 if(ZEPHCORE_PLATFORM_CONF MATCHES "esp32_common" AND EXTRA_CONF_FILE MATCHES "repeater"
    AND NOT BOARD MATCHES "/esp32/")
     set(ZEPHCORE_WIFI_OTA_CONF "${CMAKE_CURRENT_SOURCE_DIR}/boards/common/wifi_ota.conf")

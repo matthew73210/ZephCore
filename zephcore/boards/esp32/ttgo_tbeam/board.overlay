@@ -31,9 +31,9 @@
  * controller/PHY Kconfig half-configured (BT_ESP32 stays off). Enabling the HCI
  * node selects BT_ESP32, which in turn pulls in the shared PHY.
  *
- * WiFi is intentionally left disabled: the classic ESP32 cannot fit the mesh
- * stack alongside both the WiFi and BLE controllers in DRAM, and the companion
- * transport is BLE. (A WiFi-observer build would need its own RAM-trimmed conf.)
+ * WiFi is intentionally left disabled. The companion transport is BLE, and the
+ * classic ESP32 repeater is CLI-only (WiFi OTA's functional driver + 64KB heap
+ * overflow this board's DRAM, so it's excluded in CMakeLists.txt — see there).
  */
 / {
 	chosen {

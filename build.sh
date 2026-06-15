@@ -135,11 +135,12 @@ if [[ $1 == "esp32" ]]; then
             exit 1;
         fi
 
-        # Classic ESP32 (e.g. T-Beam, PICO-D4) cannot fit the mesh stack
-        # alongside MCUboot in DRAM, so it uses Zephyr's simple-boot path: a
-        # self-contained zephyr.bin flashed at the 0x1000 ROM bootloader offset.
-        # The S3/C-series have the DRAM headroom and use sysbuild + MCUboot
-        # (handled in the blocks below).
+        # Classic ESP32 (e.g. T-Beam, PICO-D4) uses Zephyr's simple-boot path for
+        # both roles: a self-contained zephyr.bin flashed at the 0x1000 ROM
+        # bootloader offset. The companion keeps BLE (whose controller reserves
+        # ~50KB DRAM, leaving no room for MCUboot) and the repeater is CLI-only
+        # (WiFi OTA's functional driver + 64KB heap overflow DRAM by ~10KB). The
+        # S3/C-series have the DRAM headroom and use sysbuild + MCUboot below.
         if [[ $chip == "esp32" ]]; then
             if [[ $2 == "companions" ]]; then
                 role="companion"
