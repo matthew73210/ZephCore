@@ -5,6 +5,7 @@
 
 #include "RepeaterDataStore.h"
 #include <zephyr/fs/fs.h>
+#include <zephyr/storage/flash_map.h>
 #include <zephyr/logging/log.h>
 #include <string.h>
 #include <stdio.h>
@@ -353,6 +354,17 @@ bool RepeaterDataStore::formatFileSystem() {
         fs_unlink(path);
     }
     fs_closedir(&dir);
+
+#if FIXED_PARTITION_EXISTS(storage_partition)
+    /* Erase the NVS bonds partition too — a factory reset should clear BLE
+     * bonds, not just repeater files.  Caller reboots so NVS re-inits clean. */
+    const struct flash_area *fap;
+    if (flash_area_open(PARTITION_ID(storage_partition), &fap) == 0) {
+        LOG_INF("Formatting NVS storage (%u bytes)", (unsigned)fap->fa_size);
+        flash_area_flatten(fap, 0, fap->fa_size);
+        flash_area_close(fap);
+    }
+#endif
 
     LOG_INF("Repeater data erased");
     return true;

@@ -1271,6 +1271,10 @@ void zephcore_ble_init(const struct ble_callbacks *cbs)
 void zephcore_ble_start(const char *name)
 {
 	if (IS_ENABLED(CONFIG_SETTINGS)) {
+		/* NVS self-initializes the storage_partition on first mount: a
+		 * region carved from the old app slot reads as "all sectors closed",
+		 * which nvs_startup() reformats (erase-all) before settings load.
+		 * No app-side seeding needed. */
 		settings_load();
 #if IS_ENABLED(CONFIG_BT_GATT_SERVICE_CHANGED)
 		gatt_layout_check_after_settings_load();

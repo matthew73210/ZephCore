@@ -914,7 +914,15 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
         }
     } else if (sender_timestamp == 0 && strcmp(command, "erase") == 0) {
         bool s = _callbacks->formatFileSystem();
-        snprintf(reply, CLI_REPLY_SIZE, "File system erase: %s", s ? "OK" : "Err");
+        if (s) {
+            /* formatFileSystem() flattens the mounted NVS bonds partition,
+             * leaving stale in-RAM bond state.  Reboot (deferred so this
+             * reply transmits first) so NVS + the BT stack re-init cleanly. */
+            snprintf(reply, CLI_REPLY_SIZE, "File system erase: OK - rebooting");
+            scheduleReboot(REBOOT_NORMAL);
+        } else {
+            snprintf(reply, CLI_REPLY_SIZE, "File system erase: Err");
+        }
     } else if (memcmp(command, "ver", 3) == 0) {
         snprintf(reply, CLI_REPLY_SIZE, "%s (Build: %s)", _callbacks->getFirmwareVer(), _callbacks->getBuildDate());
     } else if (memcmp(command, "board", 5) == 0) {
