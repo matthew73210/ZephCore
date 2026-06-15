@@ -349,6 +349,19 @@ if(ZEPHCORE_CONF_FILES)
     endif()
 endif()
 
+# ESP32 debug builds: debug.conf is nRF/SEGGER-RTT shaped — on ESP32 RTT yields
+# no output (no J-Link; logs go out the UART console) and the deferred-log DRAM
+# overflows the RAM-tight classic ESP32. Append debug_esp32.conf LAST so it wins
+# over debug.conf (console backend, smaller buffers, trimmed companion arrays).
+if(ZEPHCORE_PLATFORM_CONF MATCHES "esp32_common"
+   AND EXTRA_CONF_FILE MATCHES "debug" AND NOT EXTRA_CONF_FILE MATCHES "debug_esp32")
+    set(ZEPHCORE_DEBUG_ESP32_CONF "${CMAKE_CURRENT_SOURCE_DIR}/boards/common/debug_esp32.conf")
+    if(EXISTS ${ZEPHCORE_DEBUG_ESP32_CONF})
+        set(EXTRA_CONF_FILE "${EXTRA_CONF_FILE};${ZEPHCORE_DEBUG_ESP32_CONF}" CACHE STRING "" FORCE)
+        message(STATUS "  ESP32 debug: appended debug_esp32.conf (no RTT, smaller buffers)")
+    endif()
+endif()
+
 # Auto-pair user-supplied EXTRA_CONF_FILE entries with same-named .overlay files.
 # This allows repeater.conf + repeater.overlay, prod.conf + prod.overlay, etc.
 if(EXTRA_CONF_FILE)
