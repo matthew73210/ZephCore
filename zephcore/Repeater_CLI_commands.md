@@ -58,10 +58,12 @@ All commands are sent over USB serial (CDC-ACM). Commands sent remotely over the
 
 | Command | Description |
 |---------|-------------|
-| `password <new_password>` | Set the admin password |
+| `password <new_password>` | Set the admin password (**max 15 characters**) |
 | `setperm <perms_hex> <pubkey_hex>` | Set ACL permissions for a node (app format: 2-char hex perms first) |
 | `setperm <pubkey_hex> <perms_dec>` | Set ACL permissions for a node (Arduino format: pubkey first, decimal perms) |
 | `get acl` | *(USB only)* List all ACL entries with permissions and public keys |
+
+> **Password length:** admin and guest passwords are capped at **15 characters** (16-byte storage incl. NUL; same limit as Arduino MeshCore). The login-send path silently truncates anything longer, so a password >15 chars will never authenticate. Applies to `set guest.password` as well.
 
 ---
 

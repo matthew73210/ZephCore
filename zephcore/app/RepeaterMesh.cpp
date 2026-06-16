@@ -129,21 +129,29 @@ uint8_t RepeaterMesh::handleLoginReq(const mesh::Identity& sender, const uint8_t
     if (client == nullptr) {
         uint8_t perms;
 
-        /* Constant-time comparison: pad the received password to the full
-         * 16-byte storage size with zeros, then compare against both
-         * stored passwords (which are already zero-padded by initNodePrefs).
-         * Compare both unconditionally so timing is identical for any
-         * wrong password regardless of which (admin/guest) it most
+        /* Constant-time comparison: zero-pad BOTH the received password and
+         * the stored passwords into cleared buffers (copying only up to the
+         * NUL) before comparing full-width. Don't trust the stored buffer to
+         * be zero-padded: a password set over a longer previous value via the
+         * CLI leaves trailing garbage past the NUL (and such garbage may
+         * already be persisted in flash on upgraded devices). Comparing the
+         * raw stored buffer full-width would then fail to match a correct
+         * password. Compare both unconditionally so timing is identical for
+         * any wrong password regardless of which (admin/guest) it most
          * resembles. */
         uint8_t received[sizeof(_prefs.password)] = {0};
+        uint8_t admin_pw[sizeof(_prefs.password)] = {0};
+        uint8_t guest_pw[sizeof(_prefs.guest_password)] = {0};
         size_t r_len = strnlen((const char *)data, sizeof(received) - 1);
         memcpy(received, data, r_len);
+        memcpy(admin_pw, _prefs.password, strnlen(_prefs.password, sizeof(admin_pw) - 1));
+        memcpy(guest_pw, _prefs.guest_password, strnlen(_prefs.guest_password, sizeof(guest_pw) - 1));
 
         bool admin_match = mesh::Utils::constantTimeEqual(received,
-                                                          _prefs.password,
+                                                          admin_pw,
                                                           sizeof(received));
         bool guest_match = mesh::Utils::constantTimeEqual(received,
-                                                          _prefs.guest_password,
+                                                          guest_pw,
                                                           sizeof(received));
 
         if (admin_match) {

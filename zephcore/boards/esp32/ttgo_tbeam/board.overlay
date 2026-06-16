@@ -79,6 +79,13 @@
 / {
 	chosen {
 		zephyr,bt-hci = &esp32_bt_hci;
+		/* GPS is powered by the AXP2101 ALDO3 rail (no discrete enable GPIO),
+		 * so the GPS manager toggles this regulator to switch GPS on/off. */
+		zephcore,gps-power = &vdd_gnss;
+		/* AXP2101 also charges the GPS V_BCKP domain (button-battery output),
+		 * so ephemeris/RTC survive ALDO3 power cuts → warm re-fix in standby.
+		 * Enabled via raw I2C at boot (VBACKUP isn't a Zephyr regulator). */
+		zephcore,gps-backup-pmu = &axp2101;
 	};
 
 	aliases {

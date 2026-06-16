@@ -22,6 +22,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/regulator.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/fs/fs.h>
 #include <string.h>
 #if defined(CONFIG_SOC_NRF52840)
@@ -547,6 +549,55 @@ static const struct gpio_dt_spec gps_enable_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(gps
 #define HAS_GPS_POWER_CONTROL 0
 #endif
 
+/* GPS powered by a PMU regulator rail instead of a discrete enable GPIO (e.g.
+ * LilyGo T-Beam: GPS is on the AXP2101 ALDO3 rail). Selected via the chosen
+ * `zephcore,gps-power` node pointing at the regulator. Acts as a master power
+ * switch driven by enable/disable; the duty-cycle standby/wake uses software
+ * sleep/wake (UART) and leaves the rail up, so the regulator is only toggled on
+ * the (unguarded) enable/disable/boot paths — never per duty cycle. */
+#if DT_NODE_EXISTS(DT_CHOSEN(zephcore_gps_power))
+static const struct device *const gps_power_reg =
+	DEVICE_DT_GET(DT_CHOSEN(zephcore_gps_power));
+/* Tracks our intended rail state so enable/disable stay balanced (idempotent).
+ * Starts true: the rail is `regulator-boot-on`, so it is already up at boot. */
+static bool gps_reg_enabled = true;
+#define HAS_GPS_POWER_REGULATOR 1
+#else
+#define HAS_GPS_POWER_REGULATOR 0
+#endif
+
+/* AXP2101 backup (button-battery) charger — feeds the GPS receiver's V_BCKP
+ * domain so ephemeris/RTC survive main-rail (ALDO3) power cuts, giving a
+ * warm/hot re-fix instead of a cold start each duty cycle. The Zephyr regulator
+ * driver doesn't expose VBACKUP, so enable it with raw I2C at boot (mirrors
+ * Arduino enablePowerOutput(XPOWERS_VBACKUP) + setPowerChannelVoltage 3.3V).
+ * Selected via chosen `zephcore,gps-backup-pmu` pointing at the AXP2101 node. */
+#if DT_NODE_EXISTS(DT_CHOSEN(zephcore_gps_backup_pmu))
+#define AXP2101_REG_CHG_GAUGE_WDT_CTRL  0x18U  /* bit 2 = button-battery charge enable */
+#define AXP2101_BTN_CHARGE_ENABLE       BIT(2)
+#define AXP2101_REG_BTN_BAT_CHG_VOL_SET 0x6AU  /* low 3 bits: (mV - 2600) / 100 */
+#define AXP2101_BTN_VOL_3V3             0x07U  /* (3300 - 2600) / 100 */
+static int gps_backup_charger_init(void)
+{
+	static const struct i2c_dt_spec axp = I2C_DT_SPEC_GET(DT_CHOSEN(zephcore_gps_backup_pmu));
+
+	if (!device_is_ready(axp.bus)) {
+		LOG_WRN("GPS backup: AXP2101 I2C bus not ready");
+		return 0;
+	}
+	/* Set the backup-charge target to 3.3V (low 3 bits), then enable the
+	 * charger. Read-modify-write so the fuel-gauge enable (bit 3 of 0x18) and
+	 * the other 0x6A bits are preserved. */
+	i2c_reg_update_byte_dt(&axp, AXP2101_REG_BTN_BAT_CHG_VOL_SET, 0x07U, AXP2101_BTN_VOL_3V3);
+	i2c_reg_update_byte_dt(&axp, AXP2101_REG_CHG_GAUGE_WDT_CTRL,
+			       AXP2101_BTN_CHARGE_ENABLE, AXP2101_BTN_CHARGE_ENABLE);
+	LOG_INF("GPS backup: AXP2101 VBACKUP charger enabled (3.3V)");
+	return 0;
+}
+/* After the MFD/I2C is up (POST_KERNEL ~86); APPLICATION is safely later. */
+SYS_INIT(gps_backup_charger_init, APPLICATION, 50);
+#endif
+
 /* T1000-E specific GPS control pins */
 #if DT_NODE_EXISTS(DT_ALIAS(gps_vrtc_enable))
 static const struct gpio_dt_spec gps_vrtc_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(gps_vrtc_enable), gpios);
@@ -602,6 +653,20 @@ static bool gps_gpio_configured = false;
  *                  Only relevant on T1000-E (HAS_GPS_VRTC); ignored on other boards. */
 static void gps_power_control(bool on, bool keep_vrtc = false)
 {
+#if HAS_GPS_POWER_REGULATOR
+	/* Master power rail (PMU regulator). Idempotent enable/disable so the
+	 * refcount stays balanced regardless of how often this is called. */
+	if (on != gps_reg_enabled && device_is_ready(gps_power_reg)) {
+		int ret = on ? regulator_enable(gps_power_reg)
+			     : regulator_disable(gps_power_reg);
+		if (ret == 0) {
+			gps_reg_enabled = on;
+			LOG_INF("GPS power %s (regulator)", on ? "ON" : "OFF");
+		} else {
+			LOG_WRN("GPS regulator %s failed: %d", on ? "enable" : "disable", ret);
+		}
+	}
+#endif
 #if HAS_GPS_POWER_CONTROL
 	/* Direct GPIO power control — works on all boards.
 	 * We toggle the GPS power pin ourselves rather than using driver PM
@@ -744,6 +809,12 @@ static void gps_power_control(bool on, bool keep_vrtc = false)
  * gps_power_control() was never called (GPIO not yet configured). */
 void gps_power_off_for_shutdown(void)
 {
+#if HAS_GPS_POWER_REGULATOR
+	if (gps_reg_enabled && device_is_ready(gps_power_reg)) {
+		regulator_disable(gps_power_reg);
+		gps_reg_enabled = false;
+	}
+#endif
 #if HAS_GPS_POWER_CONTROL
 	if (gpio_is_ready_dt(&gps_enable_gpio)) {
 		gpio_pin_configure_dt(&gps_enable_gpio, GPIO_OUTPUT_LOW);
@@ -799,14 +870,14 @@ void gps_power_off_for_shutdown(void)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(gnss), okay) && \
     DT_NODE_HAS_STATUS(DT_BUS(DT_NODELABEL(gnss)), okay)
 #define HAS_GPS_UART 1
-#if !HAS_GPS_POWER_CONTROL
+#if !HAS_GPS_POWER_CONTROL && !HAS_GPS_POWER_REGULATOR
 static const struct device *gps_uart_dev = DEVICE_DT_GET(DT_BUS(DT_NODELABEL(gnss)));
 #endif
 #else
 #define HAS_GPS_UART 0
 #endif
 
-#if HAS_GPS_UART && !HAS_GPS_POWER_CONTROL
+#if HAS_GPS_UART && !HAS_GPS_POWER_CONTROL && !HAS_GPS_POWER_REGULATOR
 /* Send raw bytes to the GPS UART using blocking poll_out.
  * Safe to call even though modem_chat/modem_ubx owns the UART pipe:
  * uart_poll_out writes one byte at a time through the TX register,
@@ -877,7 +948,7 @@ static void gps_software_wake(void)
 	/* Give the module time to boot and start NMEA output */
 	k_msleep(200);
 }
-#endif /* HAS_GPS_UART && !HAS_GPS_POWER_CONTROL */
+#endif /* HAS_GPS_UART && !HAS_GPS_POWER_CONTROL && !HAS_GPS_POWER_REGULATOR */
 
 /* Go to standby and schedule next wake.
  * GPIO power control only — keep VRTC for warm start on T1000-E,
@@ -901,9 +972,14 @@ static void gps_go_to_standby(void)
 
 	/* Power down the GPS module.
 	 * GPIO boards: hardware power-off (keep VRTC for warm start on T1000-E).
-	 * Non-GPIO boards: software sleep via UART commands (PMTK + UBX). */
+	 * Regulator boards: cut the main rail entirely (both roles). The AXP2101
+	 *   VBACKUP charger keeps the receiver's V_BCKP domain alive, so ephemeris/
+	 *   RTC survive the cut and re-acquisition is a warm/hot start, not cold.
+	 * Other non-GPIO boards: software sleep via UART commands (PMTK + UBX). */
 #if HAS_GPS_POWER_CONTROL
 	gps_power_control(false, true);
+#elif HAS_GPS_POWER_REGULATOR
+	gps_power_control(false);
 #elif HAS_GPS_UART
 	gps_software_sleep();
 #endif
@@ -932,7 +1008,7 @@ static void gps_start_acquiring(void)
 	consecutive_good_fixes = 0;
 	gnss_activity_seen_this_cycle = false;
 
-#if HAS_GPS_POWER_CONTROL
+#if HAS_GPS_POWER_CONTROL || HAS_GPS_POWER_REGULATOR
 	gps_power_control(true);
 #elif HAS_GPS_UART
 	gps_software_wake();

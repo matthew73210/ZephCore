@@ -397,7 +397,7 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
             strcpy(reply, "Error: freq 150-2500, bw 7-500, sf 5-12, cr 5-8, timeout>0");
         }
     } else if (memcmp(command, "password ", 9) == 0) {
-        StrHelper::strncpy(_prefs->password, &command[9], sizeof(_prefs->password));
+        StrHelper::strzcpy(_prefs->password, &command[9], sizeof(_prefs->password));
         savePrefs();
         snprintf(reply, CLI_REPLY_SIZE, "password now: %s", _prefs->password);
     } else if (memcmp(command, "clear stats", 11) == 0) {
@@ -607,7 +607,7 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
                 strcpy(reply, "OK");
             }
         } else if (memcmp(config, "guest.password ", 15) == 0) {
-            StrHelper::strncpy(_prefs->guest_password, &config[15], sizeof(_prefs->guest_password));
+            StrHelper::strzcpy(_prefs->guest_password, &config[15], sizeof(_prefs->guest_password));
             savePrefs();
             strcpy(reply, "OK");
         } else if (memcmp(config, "prv.key ", 8) == 0) {
