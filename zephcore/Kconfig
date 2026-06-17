@@ -587,6 +587,19 @@ config ZEPHCORE_GPS_FIX_TIMEOUT_SEC
 	  before the 3-consecutive-good-fix gate could promote. Only applies
 	  to wake cycles after the first successful fix since enable.
 
+config ZEPHCORE_GPS_FIRST_FIX_TIMEOUT_SEC
+	int "GPS first-acquisition timeout in seconds"
+	default 300
+	range 30 1800
+	help
+	  Bounded window for the FIRST position fix after GPS is enabled
+	  (cold start). Longer than the normal fix timeout because a cold
+	  start may need to download almanac data. If no fix is acquired in
+	  this window the node drops into the normal duty cycle anyway, so
+	  the GPS can never stay powered indefinitely with no sky view.
+	  Default 300s (5 minutes). Companion mode only; repeaters use a
+	  fixed 5-minute time-sync window.
+
 endmenu
 
 menu "WiFi OTA Update"

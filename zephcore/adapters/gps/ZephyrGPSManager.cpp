@@ -88,6 +88,7 @@ enum gps_state {
 static enum gps_state gps_current_state = GPS_STATE_OFF;
 static uint8_t consecutive_good_fixes = 0;
 static bool first_fix_acquired = false;  /* True after first 3-good-fix cycle since enable. Cleared on gps_enable(false) and at boot. */
+static bool first_acquire_used = false;  /* True once the one-time long cold-start window has ended (fix or timeout). Cleared on gps_enable(false) and at boot. */
 static bool gps_time_synced = false;     /* True after GPS syncs RTC. Starts false at boot (RTC reset),
                                           * set true after 3 good fixes, cleared when GPS disabled. */
 static int64_t last_fix_uptime_ms = 0;  /* k_uptime when last validated fix was acquired */
@@ -98,8 +99,9 @@ static uint64_t standby_interval_ms = 0; /* How long standby lasts (for next-wak
 #define GPS_MIN_SATELLITES       4       /* Minimum satellites for valid fix */
 
 /* Runtime-configurable intervals, initialized from Kconfig defaults */
-static uint32_t gps_acquire_timeout_ms = CONFIG_ZEPHCORE_GPS_FIX_TIMEOUT_SEC * 1000U;
-static uint32_t gps_wake_interval_ms   = CONFIG_ZEPHCORE_GPS_POLL_INTERVAL_SEC * 1000U;
+static uint32_t gps_acquire_timeout_ms   = CONFIG_ZEPHCORE_GPS_FIX_TIMEOUT_SEC * 1000U;
+static uint32_t gps_first_fix_timeout_ms = CONFIG_ZEPHCORE_GPS_FIRST_FIX_TIMEOUT_SEC * 1000U;
+static uint32_t gps_wake_interval_ms     = CONFIG_ZEPHCORE_GPS_POLL_INTERVAL_SEC * 1000U;
 
 /* Repeater mode intervals - GPS only for time sync */
 #define GPS_REPEATER_SYNC_INTERVAL_MS  (48ULL * 60 * 60 * 1000)  /* 48 hours */
@@ -959,6 +961,25 @@ static void gps_software_wake(void)
 }
 #endif /* HAS_GPS_UART && !HAS_GPS_POWER_CONTROL && !HAS_GPS_POWER_REGULATOR */
 
+/* Acquire-window timeout (ms) for the current phase.
+ * - Repeater: fixed 5-min time-sync window.
+ * - First acquisition after enable (cold start, no fix yet): a generous but
+ *   bounded window so almanac download has time, without pinning the module
+ *   on forever when there's no sky. Spent once (first_acquire_used set on the
+ *   first standby), after which the node uses the normal duty cycle regardless
+ *   of whether a fix was obtained.
+ * - All later windows: the normal (warm) acquire timeout. */
+static uint32_t gps_acquire_window_ms(void)
+{
+	if (gps_repeater_mode) {
+		return GPS_REPEATER_SYNC_TIMEOUT_MS;
+	}
+	if (!first_fix_acquired && !first_acquire_used) {
+		return gps_first_fix_timeout_ms;
+	}
+	return gps_acquire_timeout_ms;
+}
+
 /* Go to standby and schedule next wake.
  * GPIO power control only — keep VRTC for warm start on T1000-E,
  * FORCE_ON pin LOW for L76K hardware standby. */
@@ -974,6 +995,9 @@ static void gps_go_to_standby(void)
 	}
 	gps_current_state = GPS_STATE_STANDBY;
 	consecutive_good_fixes = 0;
+	/* The one-time long cold-start window (if any) is now spent — later
+	 * wakes use the normal (warm) acquire timeout via gps_acquire_window_ms(). */
+	first_acquire_used = true;
 
 	/* Record standby timing for UI (next-wake calculation) */
 	standby_start_ms = k_uptime_get();
@@ -1023,16 +1047,11 @@ static void gps_start_acquiring(void)
 	gps_software_wake();
 #endif
 
-	/* Start timeout timer */
-	if (gps_repeater_mode) {
-		/* Repeater mode: always use 5 min timeout for time sync */
-		k_work_schedule(&gps_timeout_work, K_MSEC(GPS_REPEATER_SYNC_TIMEOUT_MS));
-	} else if (first_fix_acquired) {
-		/* Companion mode: use short timeout after first fix acquired */
-		k_work_schedule(&gps_timeout_work, K_MSEC(gps_acquire_timeout_ms));
-	} else {
-		LOG_INF("GPS: First fix mode - no timeout");
-	}
+	/* Start timeout timer — every window is now bounded (the first
+	 * cold-start window is just longer; see gps_acquire_window_ms). */
+	uint32_t timeout_ms = gps_acquire_window_ms();
+	LOG_INF("GPS: Acquire window %u s", timeout_ms / 1000U);
+	k_work_schedule(&gps_timeout_work, K_MSEC(timeout_ms));
 }
 
 /* Work handler: wake GPS for fix.
@@ -1396,12 +1415,10 @@ void gps_enable(bool enable)
 		 * ~300ms to boot after GPIO power restore and calling it
 		 * immediately deadlocks the main thread. */
 
-		/* No timeout for first fix after enable - wait as long as needed */
-		if (first_fix_acquired) {
-			k_work_schedule(&gps_timeout_work, K_MSEC(gps_acquire_timeout_ms));
-		} else {
-			LOG_INF("GPS: First fix mode - no timeout until first successful fix");
-		}
+		/* Bounded first-acquisition window, then the normal duty cycle */
+		uint32_t timeout_ms = gps_acquire_window_ms();
+		LOG_INF("GPS: Acquire window %u s", timeout_ms / 1000U);
+		k_work_schedule(&gps_timeout_work, K_MSEC(timeout_ms));
 	} else {
 		LOG_INF("GPS disabled - canceling timers and powering off");
 
@@ -1420,11 +1437,11 @@ void gps_enable(bool enable)
 		gps_current_state = GPS_STATE_OFF;
 		consecutive_good_fixes = 0;
 
-		/* Clear first-fix flag so the next enable gets the "no timeout"
-		 * grace period again — in marginal signal, a 30–120s timeout may
-		 * never be enough, and the user explicitly toggled GPS expecting
-		 * it to try hard for a fix. */
+		/* Clear first-fix flags so the next enable gets a fresh long
+		 * first-acquisition window again — the user explicitly toggled GPS
+		 * expecting it to try hard for a fix. */
 		first_fix_acquired = false;
+		first_acquire_used = false;
 
 		/* Clear time sync flag - time will drift, allow phone sync again */
 		gps_time_synced = false;
@@ -1574,22 +1591,12 @@ void gps_request_fresh_fix(void)
 		 * telemetry request that arrives 25s into a 30s acquire window
 		 * only has 5s left, which in marginal signal usually means the
 		 * chip goes to standby before producing a fix the requester
-		 * could use. Repeater mode uses its own 5min timeout; companion
-		 * mode pre-first-fix has no timeout (nothing to reschedule). */
-		uint32_t timeout_ms = 0;
-		if (gps_repeater_mode) {
-			timeout_ms = GPS_REPEATER_SYNC_TIMEOUT_MS;
-		} else if (first_fix_acquired) {
-			timeout_ms = gps_acquire_timeout_ms;
-		}
-		if (timeout_ms > 0) {
-			LOG_INF("GPS: Fresh fix requested, extending acquire "
-				"timeout by %u ms", timeout_ms);
-			k_work_reschedule(&gps_timeout_work, K_MSEC(timeout_ms));
-		} else {
-			LOG_DBG("GPS: Fresh fix requested, already acquiring "
-				"(no timeout active)");
-		}
+		 * could use. Every phase now has a bounded window
+		 * (gps_acquire_window_ms), so always reschedule from now. */
+		uint32_t timeout_ms = gps_acquire_window_ms();
+		LOG_INF("GPS: Fresh fix requested, extending acquire timeout to %u s",
+			timeout_ms / 1000U);
+		k_work_reschedule(&gps_timeout_work, K_MSEC(timeout_ms));
 	}
 #endif
 }
