@@ -749,9 +749,18 @@ static void gps_power_control(bool on, bool keep_vrtc = false)
 #if HAS_GPS_RESET
 		/* Hold GPS in reset during power-off — matches Arduino sleep_gps()/stop_gps().
 		 * Ensures chip sees RESET asserted when GPS_EN goes HIGH on next
-		 * power-on, preventing uncontrolled startup before the reset pulse. */
+		 * power-on, preventing uncontrolled startup before the reset pulse.
+		 * Configure-on-first-use (mirrors the GPS_EN pin below): on a
+		 * boot-with-GPS-off the power-on path never ran, so the pin isn't an
+		 * output yet — gpio_pin_set_dt() alone would leave it floating instead
+		 * of asserting reset. GPIO_OUTPUT_ACTIVE drives the active (asserted)
+		 * level directly. */
 		if (gpio_is_ready_dt(&gps_reset_gpio)) {
-			gpio_pin_set_dt(&gps_reset_gpio, 1);
+			if (!gps_gpio_configured) {
+				gpio_pin_configure_dt(&gps_reset_gpio, GPIO_OUTPUT_ACTIVE);
+			} else {
+				gpio_pin_set_dt(&gps_reset_gpio, 1);
+			}
 		}
 #endif
 
