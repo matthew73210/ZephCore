@@ -27,6 +27,7 @@
 		zephyr,code-partition = &code_partition;
 		zephyr,console = &cdc_acm_uart;
 		zephyr,shell-uart = &cdc_acm_uart;
+		zephyr,display = &mono_tft;
 		zephcore,gps-power = &gps_power;
 	};
 
@@ -37,6 +38,7 @@
 		lora0 = &lora;
 		watchdog0 = &wdt0;
 		gps-reset = &gps_reset_pin;
+		display0 = &tft;
 	};
 
 	leds {
@@ -113,6 +115,86 @@
 		enable-gpios = <&gpio1 15 GPIO_ACTIVE_HIGH>;
 	};
 
+	/*
+	 * Schematic net Vext_Ctrl: P0.26 enables the switched peripheral rail
+	 * that MeshCore's T096 variant claims before ST7735 display init.
+	 */
+	tft_pwr_enable: tft-pwr-enable {
+		compatible = "regulator-fixed";
+		regulator-name = "tft-pwr-enable";
+		enable-gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+		regulator-boot-on;
+		startup-delay-us = <10000>;
+	};
+
+	/*
+	 * Schematic/datasheet display LED net LEDA: P1.12. MeshCore defines
+	 * PIN_TFT_LEDA_CTL_ACTIVE=LOW for the T096 backlight control.
+	 */
+	disp_pwr_enable: disp-pwr-enable {
+		compatible = "regulator-fixed";
+		regulator-name = "disp-pwr-enable";
+		enable-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>;
+	};
+
+	/*
+	 * Monochrome wrapper around the ST7735S-compatible TFT.
+	 * Reports PIXEL_FORMAT_MONO01 to CFB and converts rows to RGB565.
+	 */
+	mono_tft: mono-tft {
+		compatible = "zephcore,mono-tft";
+		tft-dev = <&tft>;
+		width = <160>;
+		height = <80>;
+	};
+
+	/*
+	 * MIPI-DBI SPI bus for the ST7735S 0.96" 160x80 TFT.
+	 * T096 schematic nets:
+	 * - RS    -> P0.15, data/command
+	 * - RESET -> P0.13, active-LOW reset
+	 * - SDIN  -> P0.17, SPI MOSI
+	 * - SCLK  -> P0.20, SPI SCK
+	 * - CS    -> P0.22, SPI chip-select
+	 */
+	mipi_dbi {
+		compatible = "zephyr,mipi-dbi-spi";
+		spi-dev = <&spi3>;
+		dc-gpios = <&gpio0 15 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
+		write-only;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		tft: st7735s@0 {
+			compatible = "sitronix,st7735r";
+			mipi-max-frequency = <20000000>;
+			mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+			reg = <0>;
+			width = <160>;
+			height = <80>;
+			inversion-on;
+			x-offset = <1>;
+			y-offset = <26>;
+			madctl = <0xa8>;
+			colmod = <0x05>;
+			invctr = <7>;
+			vmctr1 = <0x0e>;
+			pwctr1 = [a2 02 84];
+			pwctr2 = [c1];
+			pwctr3 = [0a 00];
+			pwctr4 = [8a 2a];
+			pwctr5 = [8a ee];
+			frmctr1 = [01 26 2e];
+			frmctr2 = [01 26 2e];
+			frmctr3 = [01 26 2e 01 26 2e];
+			gamctrp1 = [0f 1a 0f 18 2f 28 20 22 1f 1b 23 37 00 07 02 10];
+			gamctrn1 = [0f 1b 0f 17 33 2c 29 2e 30 2e 30 3b 00 07 03 10];
+			caset = [00 01 00 a0];
+			raset = [00 1a 00 69];
+		};
+	};
+
 	zephyr,user {
 		io-channels = <&adc 1>;
 		/*
@@ -181,6 +263,16 @@
 	gnss: gnss {
 		compatible = "gnss-nmea-generic";
 	};
+};
+
+/* SPI3 - ST7735S 0.96" 160x80 TFT display */
+&spi3 {
+	compatible = "nordic,nrf-spim";
+	status = "okay";
+	pinctrl-0 = <&spi3_default>;
+	pinctrl-1 = <&spi3_sleep>;
+	pinctrl-names = "default", "sleep";
+	cs-gpios = <&gpio0 22 GPIO_ACTIVE_LOW>; /* Schematic net CS */
 };
 
 /* SPI2 - SX1262 LoRa radio */

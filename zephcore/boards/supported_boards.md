@@ -27,7 +27,7 @@ gat562_30s
 >
 > **Heltec T114** screenless build: append `boards/nrf52840/heltec_t114/no_display.conf` to `EXTRA_CONF_FILE` for units without the TFT module.
 >
-> **Heltec Mesh Node T096** (`heltec_t096`): nRF52840 with SX1262 + KCT8103L PA/FEM and UC6580 GNSS. The display connector and external SPI flash footprint are documented in the board notes but left disabled until the controller/device parameters are hardware-confirmed.
+> **Heltec Mesh Node T096** (`heltec_t096`): nRF52840 with SX1262 + KCT8103L PA/FEM, UC6580 GNSS, and ST7735S 160x80 TFT companion display. The external SPI flash footprint is documented in the board notes but left disabled until the device parameters are confirmed.
 
 ## ESP32
 
